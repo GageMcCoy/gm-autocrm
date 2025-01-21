@@ -75,7 +75,7 @@ export default function CustomerView() {
         <div className="card bg-base-100 shadow-xl">
           <div className="card-body">
             <h2 className="text-2xl font-bold text-gray-900">Submit a New Ticket</h2>
-            <p className="text-gray-700">Tell us about your issue and we'll help you resolve it.</p>
+            <p className="text-gray-700">Tell us about your issue and we&apos;ll help you resolve it.</p>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               <div className="form-control w-full">

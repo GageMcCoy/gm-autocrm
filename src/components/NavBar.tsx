@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 export default function NavBar() {
@@ -43,8 +44,14 @@ export default function NavBar() {
         </button>
         <div className="dropdown dropdown-end">
           <label tabIndex={0} className="btn btn-ghost btn-circle avatar">
-            <div className="w-10 rounded-full">
-              <img src="https://ui-avatars.com/api/?name=User" alt="User Avatar" />
+            <div className="w-10 rounded-full relative">
+              <Image
+                src="https://ui-avatars.com/api/?name=User"
+                alt="User Avatar"
+                fill
+                sizes="40px"
+                className="rounded-full"
+              />
             </div>
           </label>
           <ul tabIndex={0} className="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">

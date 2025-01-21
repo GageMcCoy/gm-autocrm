@@ -23,7 +23,7 @@ export default function WorkerView() {
       console.log('Starting ticket fetch...');
       
       // First, let's verify we can access the table
-      const { data: tableInfo, error: tableError } = await supabase
+      const { data: tableInfo } = await supabase
         .from('tickets')
         .select('count');
       
