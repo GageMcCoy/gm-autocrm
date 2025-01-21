@@ -14,31 +14,44 @@ interface User {
   last_sign_in: string | null;
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export default function AdminView() {
   const [activeTab, setActiveTab] = useState<TabType>('analytics');
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [supabase, setSupabase] = useState<any>(null);
+
+  useEffect(() => {
+    // Initialize Supabase client
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      setError('Missing Supabase credentials');
+      setIsLoadingUsers(false);
+      return;
+    }
+
+    const client = createClient(supabaseUrl, supabaseKey);
+    setSupabase(client);
+  }, []);
 
   useEffect(() => {
     async function fetchUsers() {
+      if (!supabase) return;
+
       try {
         setIsLoadingUsers(true);
         setError(null);
         
-        const { data, error } = await supabase
+        const { data, error: fetchError } = await supabase
           .from('users')
           .select('*')
           .order('created_at', { ascending: false });
 
-        console.log('Users Query Result:', { data, error });
+        console.log('Users Query Result:', { data, fetchError });
 
-        if (error) throw error;
+        if (fetchError) throw fetchError;
         setUsers(data || []);
       } catch (err) {
         console.error('Error fetching users:', err);
@@ -48,10 +61,10 @@ export default function AdminView() {
       }
     }
 
-    if (activeTab === 'users') {
+    if (activeTab === 'users' && supabase) {
       fetchUsers();
     }
-  }, [activeTab]);
+  }, [activeTab, supabase]);
 
   return (
     <div className="min-h-screen bg-gray-50">
