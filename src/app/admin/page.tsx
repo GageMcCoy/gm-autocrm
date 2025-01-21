@@ -19,7 +19,10 @@ export default function AdminView() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { supabase, error: supabaseError } = useSupabase();
+  const { supabase } = useSupabase();
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [autoAssignment, setAutoAssignment] = useState(false);
+  const [systemName, setSystemName] = useState('gm-autocrm');
 
   useEffect(() => {
     async function fetchUsers() {
@@ -270,7 +273,8 @@ export default function AdminView() {
                     <input 
                       type="text" 
                       className="input input-bordered bg-white text-gray-900" 
-                      value="gm-autocrm" 
+                      value={systemName}
+                      onChange={(e) => setSystemName(e.target.value)}
                     />
                   </div>
                   <div className="form-control">
@@ -278,7 +282,12 @@ export default function AdminView() {
                       <span className="label-text text-gray-900 font-medium">Email Notifications</span>
                     </label>
                     <div className="flex items-center space-x-4 bg-white p-4 rounded-lg border border-gray-200">
-                      <input type="checkbox" className="toggle toggle-primary" checked />
+                      <input 
+                        type="checkbox" 
+                        className="toggle toggle-primary" 
+                        checked={emailNotifications}
+                        onChange={(e) => setEmailNotifications(e.target.checked)}
+                      />
                       <span className="text-gray-700">Enable email notifications for new tickets</span>
                     </div>
                   </div>
@@ -287,7 +296,12 @@ export default function AdminView() {
                       <span className="label-text text-gray-900 font-medium">Auto-Assignment</span>
                     </label>
                     <div className="flex items-center space-x-4 bg-white p-4 rounded-lg border border-gray-200">
-                      <input type="checkbox" className="toggle toggle-primary" />
+                      <input 
+                        type="checkbox" 
+                        className="toggle toggle-primary"
+                        checked={autoAssignment}
+                        onChange={(e) => setAutoAssignment(e.target.checked)}
+                      />
                       <span className="text-gray-700">Automatically assign tickets to available workers</span>
                     </div>
                   </div>

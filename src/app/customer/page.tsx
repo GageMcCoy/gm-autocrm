@@ -11,7 +11,7 @@ export default function CustomerView() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userTickets, setUserTickets] = useState<Ticket[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { supabase, error: supabaseError } = useSupabase();
+  const { supabase } = useSupabase();
 
   useEffect(() => {
     async function loadUserTickets() {
@@ -104,6 +104,15 @@ export default function CustomerView() {
             <h2 className="text-2xl font-bold text-gray-900">Submit a New Ticket</h2>
             <p className="text-gray-700">Tell us about your issue and we&apos;ll help you resolve it.</p>
 
+            {error && (
+              <div className="alert alert-error mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{error}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               <div className="form-control w-full">
                 <input
@@ -143,8 +152,18 @@ export default function CustomerView() {
                   className="hidden"
                   multiple
                   onChange={(e) => {
-                    // Handle file upload logic here
-                    console.log('Files:', e.target.files);
+                    try {
+                      const files = e.target.files;
+                      if (!files) return;
+                      
+                      // Handle file upload logic here
+                      console.log('Files:', files);
+                    } catch (err) {
+                      console.error('Error handling files:', err);
+                      if (err instanceof Error) {
+                        setError(err.message);
+                      }
+                    }
                   }}
                 />
               </div>

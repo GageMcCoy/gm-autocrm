@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import NavBar from '@/components/NavBar';
 import type { Ticket } from '@/utils/supabase';
 import { useSupabase } from '@/hooks/useSupabase';
@@ -12,15 +12,9 @@ export default function WorkerView() {
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const { supabase, error: supabaseError } = useSupabase();
+  const { supabase } = useSupabase();
 
-  useEffect(() => {
-    if (supabase) {
-      loadTickets();
-    }
-  }, [supabase]);
-
-  async function loadTickets() {
+  const loadTickets = useCallback(async () => {
     if (!supabase) return;
 
     try {
@@ -74,7 +68,13 @@ export default function WorkerView() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [supabase, setTickets, setIsLoading]);
+
+  useEffect(() => {
+    if (supabase) {
+      loadTickets();
+    }
+  }, [supabase, loadTickets]);
 
   async function handleTicketUpdate(ticketId: string, updates: Partial<Ticket>) {
     if (!supabase) return;
