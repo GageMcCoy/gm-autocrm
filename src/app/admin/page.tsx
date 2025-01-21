@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import NavBar from '@/components/NavBar';
+import { useSupabase } from '@/hooks/useSupabase';
 
 type TabType = 'analytics' | 'users' | 'tickets' | 'settings';
 
@@ -19,22 +19,7 @@ export default function AdminView() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-
-  useEffect(() => {
-    // Initialize Supabase client
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      setError('Missing Supabase credentials');
-      setIsLoadingUsers(false);
-      return;
-    }
-
-    const client = createClient(supabaseUrl, supabaseKey);
-    setSupabase(client);
-  }, []);
+  const { supabase, error: supabaseError } = useSupabase();
 
   useEffect(() => {
     async function fetchUsers() {

@@ -1,19 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import NavBar from '@/components/NavBar';
-import { supabase } from '@/utils/supabase';
 import type { Ticket } from '@/utils/supabase';
+import { useSupabase } from '@/hooks/useSupabase';
 
 export default function CustomerView() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userTickets, setUserTickets] = useState<Ticket[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const { supabase, error: supabaseError } = useSupabase();
+
+  useEffect(() => {
+    async function loadUserTickets() {
+      if (!supabase) return;
+
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('tickets')
+          .select('*')
+          .eq('submitted_by', 'b819988e-abfa-406f-9ce5-9c34674a3824')
+          .order('created_at', { ascending: false });
+
+        if (fetchError) throw fetchError;
+        setUserTickets(data || []);
+      } catch (err) {
+        console.error('Error loading tickets:', err);
+        setError('Failed to load tickets');
+      }
+    }
+
+    if (supabase) {
+      loadUserTickets();
+    }
+  }, [supabase]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) return;
+    if (!title.trim() || !description.trim() || !supabase) return;
 
     try {
       setIsSubmitting(true);
@@ -31,19 +57,19 @@ export default function CustomerView() {
 
       console.log('Attempting to insert ticket:', newTicket);
 
-      const { data, error } = await supabase
+      const { data, error: insertError } = await supabase
         .from('tickets')
         .insert([newTicket])
         .select();
 
-      if (error) {
+      if (insertError) {
         console.error('Supabase error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint,
+          code: insertError.code
         });
-        throw error;
+        throw insertError;
       }
 
       // Clear form
@@ -57,10 +83,11 @@ export default function CustomerView() {
 
       console.log('Ticket submitted successfully:', data);
       
-    } catch (error) {
-      console.error('Error submitting ticket:', error);
-      if (error instanceof Error) {
-        console.error('Error details:', error.message);
+    } catch (err) {
+      console.error('Error submitting ticket:', err);
+      if (err instanceof Error) {
+        console.error('Error details:', err.message);
+        setError(err.message);
       }
     } finally {
       setIsSubmitting(false);

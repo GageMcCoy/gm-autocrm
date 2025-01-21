@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import NavBar from '@/components/NavBar';
-import { supabase } from '@/utils/supabase';
 import type { Ticket } from '@/utils/supabase';
+import { useSupabase } from '@/hooks/useSupabase';
 
 export default function WorkerView() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -12,12 +12,17 @@ export default function WorkerView() {
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const { supabase, error: supabaseError } = useSupabase();
 
   useEffect(() => {
-    loadTickets();
-  }, []);
+    if (supabase) {
+      loadTickets();
+    }
+  }, [supabase]);
 
   async function loadTickets() {
+    if (!supabase) return;
+
     try {
       setIsLoading(true);
       console.log('Starting ticket fetch...');
@@ -72,6 +77,8 @@ export default function WorkerView() {
   }
 
   async function handleTicketUpdate(ticketId: string, updates: Partial<Ticket>) {
+    if (!supabase) return;
+
     try {
       console.log('Starting update for ticket:', ticketId);
       
