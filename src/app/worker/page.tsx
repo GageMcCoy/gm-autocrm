@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import NavBar from '@/components/NavBar';
 import type { Ticket } from '@/utils/supabase';
 import { useSupabase } from '@/hooks/useSupabase';
+import Header from '@/components/Header';
 
 export default function WorkerView() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -190,187 +190,193 @@ export default function WorkerView() {
   };
 
   return (
-    <div className="min-h-screen bg-base-100">
-      <NavBar />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
-        {/* Left Column - Ticket Details */}
-        <div className="space-y-4">
-          {/* Header Card */}
-          <div className="card bg-base-100 shadow-xl">
-            <div className="card-body">
-              <h2 className="text-2xl font-bold text-gray-900">Ticket Details</h2>
-              <p className="text-gray-700">View and manage ticket information</p>
+    <div className="min-h-screen bg-gray-900">
+      <Header />
+      <main className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Left Column - Ticket Details */}
+          <div className="space-y-4">
+            {/* Header Card */}
+            <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+              <h2 className="text-2xl font-bold text-white">Ticket Details</h2>
+              <p className="text-gray-400">View and manage ticket information</p>
             </div>
-          </div>
 
-          {/* Content Card */}
-          <div className="card bg-base-100 shadow-xl">
-            <div className="card-body">
-              {selectedTicket ? (
-                <>
-                  <div className="mt-2">
-                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="text-xl font-semibold text-gray-900">{selectedTicket.title}</h3>
-                      <div className="flex gap-2">
-                        <span className={getPriorityBadge(selectedTicket.priority)}>
-                          {selectedTicket.priority}
-                        </span>
-                        <span className={getStatusBadge(selectedTicket.status)}>
-                          {selectedTicket.status}
-                        </span>
+            {/* Content Card */}
+            <div className="bg-gray-800 rounded-lg shadow-lg">
+              <div className="p-6">
+                {selectedTicket ? (
+                  <>
+                    <div className="mt-2">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-xl font-semibold text-white">{selectedTicket.title}</h3>
+                        <div className="flex gap-2">
+                          <span className={getPriorityBadge(selectedTicket.priority)}>
+                            {selectedTicket.priority}
+                          </span>
+                          <span className={getStatusBadge(selectedTicket.status)}>
+                            {selectedTicket.status}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-gray-300 mt-2">{selectedTicket.description}</p>
+                      <div className="text-sm text-gray-400 mt-2">
+                        Created: {new Date(selectedTicket.created_at).toLocaleString()}
                       </div>
                     </div>
-                    <p className="text-gray-700 mt-2">{selectedTicket.description}</p>
-                    <div className="text-sm text-gray-500 mt-2">
-                      Created: {new Date(selectedTicket.created_at).toLocaleString()}
+
+                    <div className="form-control w-full mt-6">
+                      <label className="label">
+                        <span className="label-text text-gray-300 font-medium">Status</span>
+                      </label>
+                      <select 
+                        className="select select-bordered w-full bg-gray-700 text-white border-gray-600" 
+                        value={selectedTicket.status}
+                        onChange={(e) => {
+                          handleTicketUpdate(selectedTicket.id, { status: e.target.value as Ticket['status'] });
+                        }}
+                      >
+                        <option value="Open">Open</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Closed">Closed</option>
+                      </select>
                     </div>
-                  </div>
 
-                  <div className="form-control w-full mt-6">
-                    <label className="label">
-                      <span className="label-text text-gray-700 font-medium">Status</span>
-                    </label>
-                    <select 
-                      className="select select-bordered w-full text-gray-900" 
-                      value={selectedTicket.status}
-                      onChange={(e) => {
-                        handleTicketUpdate(selectedTicket.id, { status: e.target.value as Ticket['status'] });
-                      }}
-                    >
-                      <option value="Open">Open</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Closed">Closed</option>
-                    </select>
-                  </div>
+                    <div className="form-control w-full mt-4">
+                      <label className="label">
+                        <span className="label-text text-gray-300 font-medium">Priority</span>
+                      </label>
+                      <select 
+                        className="select select-bordered w-full bg-gray-700 text-white border-gray-600"
+                        value={selectedTicket.priority}
+                        onChange={(e) => {
+                          handleTicketUpdate(selectedTicket.id, { priority: e.target.value as Ticket['priority'] });
+                        }}
+                      >
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                      </select>
+                    </div>
 
-                  <div className="form-control w-full mt-4">
-                    <label className="label">
-                      <span className="label-text text-gray-700 font-medium">Priority</span>
-                    </label>
-                    <select 
-                      className="select select-bordered w-full text-gray-900"
-                      value={selectedTicket.priority}
-                      onChange={(e) => {
-                        handleTicketUpdate(selectedTicket.id, { priority: e.target.value as Ticket['priority'] });
-                      }}
-                    >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                    </select>
+                    <div className="flex gap-2 mt-6">
+                      <button 
+                        className="btn btn-success text-white gap-2"
+                        onClick={() => handleTicketUpdate(selectedTicket.id, { status: 'Resolved' })}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        Resolve
+                      </button>
+                      <button 
+                        className="btn btn-warning text-white gap-2"
+                        onClick={() => handleTicketUpdate(selectedTicket.id, { priority: 'High' })}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        Escalate
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-gray-400 text-center py-8">
+                    Select a ticket from the dashboard to view details
                   </div>
-
-                  <div className="flex gap-2 mt-6">
-                    <button 
-                      className="btn btn-success text-white gap-2"
-                      onClick={() => handleTicketUpdate(selectedTicket.id, { status: 'Resolved' })}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                      Resolve
-                    </button>
-                    <button 
-                      className="btn btn-warning text-white gap-2"
-                      onClick={() => handleTicketUpdate(selectedTicket.id, { priority: 'High' })}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                      Escalate
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-gray-600 text-center py-8">
-                  Select a ticket from the dashboard to view details
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Right Column - Ticket Dashboard */}
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            <h2 className="text-2xl font-bold text-gray-900">Ticket Dashboard</h2>
-            <p className="text-gray-700">Manage and respond to customer tickets</p>
-
-            <div className="flex gap-4 mt-4">
-              <input 
-                type="text" 
-                placeholder="Search tickets..." 
-                className="input input-bordered w-full text-gray-900" 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-
-              <select 
-                className="select select-bordered w-32 text-gray-900"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="">Status</option>
-                <option value="Open">Open</option>
-                <option value="In Progress">In Progress</option>
-              </select>
-
-              <select 
-                className="select select-bordered w-32 text-gray-900"
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-              >
-                <option value="">Priority</option>
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-              </select>
+          {/* Right Column - Ticket Dashboard */}
+          <div className="space-y-4">
+            {/* Header Card */}
+            <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+              <h2 className="text-2xl font-bold text-white">Ticket Dashboard</h2>
+              <p className="text-gray-400">Manage and respond to customer tickets</p>
             </div>
 
-            <div className="mt-6 space-y-4">
-              {isLoading ? (
-                <div className="text-center py-8">
-                  <span className="loading loading-spinner loading-md"></span>
-                </div>
-              ) : filteredTickets.length > 0 ? (
-                filteredTickets.map(ticket => (
-                  <div 
-                    key={ticket.id}
-                    className={`card bg-base-100 border hover:shadow-md cursor-pointer transition-all ${
-                      selectedTicket?.id === ticket.id ? 'border-primary border-2' : 'border-gray-200'
-                    }`}
-                    onClick={() => setSelectedTicket(ticket)}
+            {/* Content Card */}
+            <div className="bg-gray-800 rounded-lg shadow-lg">
+              <div className="p-6">
+                <div className="flex gap-4">
+                  <input 
+                    type="text" 
+                    placeholder="Search tickets..." 
+                    className="input input-bordered w-full bg-gray-700 text-white border-gray-600" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+
+                  <select 
+                    className="select select-bordered w-32 bg-gray-700 text-white border-gray-600"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
                   >
-                    <div className="card-body p-4">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-gray-900">{ticket.title}</h3>
-                          <p className="text-gray-700 text-sm mt-1 line-clamp-2">{ticket.description}</p>
-                          <div className="text-xs text-gray-500 mt-2">
-                            Created: {new Date(ticket.created_at).toLocaleString()}
+                    <option value="">Status</option>
+                    <option value="Open">Open</option>
+                    <option value="In Progress">In Progress</option>
+                  </select>
+
+                  <select 
+                    className="select select-bordered w-32 bg-gray-700 text-white border-gray-600"
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                  >
+                    <option value="">Priority</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  {isLoading ? (
+                    <div className="text-center py-8">
+                      <span className="loading loading-spinner loading-md"></span>
+                    </div>
+                  ) : filteredTickets.length > 0 ? (
+                    filteredTickets.map(ticket => (
+                      <div 
+                        key={ticket.id}
+                        className={`bg-gray-700 rounded-lg border hover:shadow-md cursor-pointer transition-all ${
+                          selectedTicket?.id === ticket.id ? 'border-primary border-2' : 'border-gray-600'
+                        }`}
+                        onClick={() => setSelectedTicket(ticket)}
+                      >
+                        <div className="p-4">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-white">{ticket.title}</h3>
+                              <p className="text-gray-300 text-sm mt-1 line-clamp-2">{ticket.description}</p>
+                              <div className="text-xs text-gray-400 mt-2">
+                                Created: {new Date(ticket.created_at).toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-2 ml-4 min-w-fit">
+                              <span className={getPriorityBadge(ticket.priority)}>
+                                {ticket.priority}
+                              </span>
+                              <span className={getStatusBadge(ticket.status)}>
+                                {ticket.status}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex flex-col gap-2 ml-4 min-w-fit">
-                          <span className={getPriorityBadge(ticket.priority)}>
-                            {ticket.priority}
-                          </span>
-                          <span className={getStatusBadge(ticket.status)}>
-                            {ticket.status}
-                          </span>
-                        </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-gray-400 text-center py-8">
+                      No tickets found
                     </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-gray-600 text-center py-8">
-                  No tickets found
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 } 

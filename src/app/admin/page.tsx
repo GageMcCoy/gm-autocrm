@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import NavBar from '@/components/NavBar';
 import { useSupabase } from '@/hooks/useSupabase';
+import Header from '@/components/Header';
 
 type TabType = 'analytics' | 'users' | 'tickets' | 'settings';
 
@@ -280,250 +280,126 @@ export default function AdminView() {
   }, [tickets, statusFilter, priorityFilter, assigneeFilter]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <NavBar />
-      <div className="p-6 max-w-[1600px] mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Admin Dashboard</h1>
+    <div className="min-h-screen bg-gray-900">
+      <Header />
+      <main className="container mx-auto px-4 py-8">
+        <div className="space-y-6">
+          {/* Tab Navigation */}
+          <div className="bg-gray-800 p-1 rounded-lg shadow-lg">
+            <div className="flex space-x-1">
+              <button 
+                className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
+                  activeTab === 'analytics' 
+                    ? 'bg-primary text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                onClick={() => setActiveTab('analytics')}
+              >
+                Analytics
+              </button>
+              <button 
+                className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
+                  activeTab === 'users' 
+                    ? 'bg-primary text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                onClick={() => setActiveTab('users')}
+              >
+                User Management
+              </button>
+              <button 
+                className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
+                  activeTab === 'tickets' 
+                    ? 'bg-primary text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                onClick={() => setActiveTab('tickets')}
+              >
+                Ticket Management
+              </button>
+              <button 
+                className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
+                  activeTab === 'settings' 
+                    ? 'bg-primary text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                onClick={() => setActiveTab('settings')}
+              >
+                System Settings
+              </button>
+            </div>
+          </div>
 
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 bg-white p-1 rounded-lg shadow-sm mb-6">
-          <button 
-            className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              activeTab === 'analytics' 
-                ? 'bg-primary text-white shadow-sm' 
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveTab('analytics')}
-          >
-            Analytics
-          </button>
-          <button 
-            className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              activeTab === 'users' 
-                ? 'bg-primary text-white shadow-sm' 
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveTab('users')}
-          >
-            User Management
-          </button>
-          <button 
-            className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              activeTab === 'tickets' 
-                ? 'bg-primary text-white shadow-sm' 
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveTab('tickets')}
-          >
-            Ticket Management
-          </button>
-          <button 
-            className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              activeTab === 'settings' 
-                ? 'bg-primary text-white shadow-sm' 
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveTab('settings')}
-          >
-            System Settings
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="p-6">
-            {activeTab === 'analytics' && (
-              <div>
-                <div className="flex justify-between items-center mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900">Analytics</h2>
+          {/* Content Area */}
+          <div className="bg-gray-800 rounded-lg shadow-lg">
+            <div className="p-6">
+              {activeTab === 'analytics' && (
+                <div>
+                  <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-white">Analytics</h2>
+                  </div>
+                  {analytics.error ? (
+                    <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg mb-4">
+                      <span>{analytics.error}</span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
+                        <h3 className="text-lg font-semibold text-white mb-2">Total Tickets</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-4xl font-bold text-white">{analytics.totalTickets}</p>
+                        )}
+                      </div>
+                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
+                        <h3 className="text-lg font-semibold text-white mb-2">Open Tickets</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-4xl font-bold text-white">{analytics.openTickets}</p>
+                        )}
+                      </div>
+                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
+                        <h3 className="text-lg font-semibold text-white mb-2">Avg Response Time</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-4xl font-bold text-white">{analytics.avgResponseTime}</p>
+                        )}
+                      </div>
+                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
+                        <h3 className="text-lg font-semibold text-white mb-2">Resolution Rate</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-4xl font-bold text-white">{analytics.resolutionRate}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {analytics.error ? (
-                  <div className="alert alert-error mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>{analytics.error}</span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                      <div className="p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Tickets</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-3xl font-bold text-primary">{analytics.totalTickets}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                      <div className="p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Open Tickets</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-3xl font-bold text-primary">{analytics.openTickets}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                      <div className="p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Avg Response Time</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-3xl font-bold text-primary">{analytics.avgResponseTime}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                      <div className="p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Resolution Rate</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-3xl font-bold text-primary">{analytics.resolutionRate}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
 
-            {activeTab === 'users' && (
-              <div>
-                <div className="flex justify-between items-center mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
-                  <button className="btn btn-primary gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                    </svg>
-                    Add User
-                  </button>
-                </div>
-                
-                {error && (
-                  <div className="alert alert-error mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                {isLoadingUsers ? (
-                  <div className="flex justify-center items-center py-8">
-                    <span className="loading loading-spinner loading-lg text-primary"></span>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="table w-full">
-                      <thead>
-                        <tr>
-                          <th className="bg-gray-50 text-gray-900">Email</th>
-                          <th className="bg-gray-50 text-gray-900">Role</th>
-                          <th className="bg-gray-50 text-gray-900">Joined</th>
-                          <th className="bg-gray-50 text-gray-900">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {users.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="text-center py-4 text-gray-500">
-                              No users found
-                            </td>
-                          </tr>
-                        ) : (
-                          users.map(user => (
-                            <tr key={user.id} className="hover:bg-gray-50">
-                              <td className="text-gray-900">{user.email}</td>
-                              <td className="text-gray-900">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  user.role === 'admin' ? 'bg-purple-100 text-purple-800' :
-                                  user.role === 'worker' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {user.role}
-                                </span>
-                              </td>
-                              <td className="text-gray-900">
-                                {new Date(user.created_at).toLocaleDateString()}
-                              </td>
-                              <td>
-                                <button className="btn btn-ghost btn-sm">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z" />
-                                  </svg>
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'tickets' && (
-              <div>
-                <div className="flex justify-between items-center mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900">Ticket Management</h2>
-                </div>
-                <div className="space-y-6">
-                  <div className="flex flex-wrap gap-4">
-                    <select 
-                      className="select select-bordered bg-white text-gray-900 min-w-[200px]"
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                    >
-                      <option value="">Filter by Status</option>
-                      <option value="Open">Open</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Resolved">Resolved</option>
-                      <option value="Closed">Closed</option>
-                    </select>
-                    <select 
-                      className="select select-bordered bg-white text-gray-900 min-w-[200px]"
-                      value={priorityFilter}
-                      onChange={(e) => setPriorityFilter(e.target.value)}
-                    >
-                      <option value="">Filter by Priority</option>
-                      <option value="High">High</option>
-                      <option value="Medium">Medium</option>
-                      <option value="Low">Low</option>
-                    </select>
-                    <select 
-                      className="select select-bordered bg-white text-gray-900 min-w-[200px]"
-                      value={assigneeFilter}
-                      onChange={(e) => setAssigneeFilter(e.target.value)}
-                    >
-                      <option value="">Filter by Assignee</option>
-                      <option value="unassigned">Unassigned</option>
-                      {workersError ? (
-                        <option value="" disabled>Error loading workers</option>
-                      ) : (
-                        workers.map(worker => (
-                          <option key={worker.id} value={worker.id}>
-                            {worker.email}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-
-                  {error && (
-                    <div className="alert alert-error">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              {activeTab === 'users' && (
+                <div>
+                  <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-white">User Management</h2>
+                    <button className="btn btn-primary gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
                       </svg>
+                      Add User
+                    </button>
+                  </div>
+                  
+                  {error && (
+                    <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg mb-4">
                       <span>{error}</span>
                     </div>
                   )}
 
-                  {isLoadingTickets ? (
+                  {isLoadingUsers ? (
                     <div className="flex justify-center items-center py-8">
                       <span className="loading loading-spinner loading-lg text-primary"></span>
                     </div>
@@ -532,54 +408,37 @@ export default function AdminView() {
                       <table className="table w-full">
                         <thead>
                           <tr>
-                            <th className="bg-gray-50 text-gray-900">Title</th>
-                            <th className="bg-gray-50 text-gray-900">Status</th>
-                            <th className="bg-gray-50 text-gray-900">Priority</th>
-                            <th className="bg-gray-50 text-gray-900">Submitted By</th>
-                            <th className="bg-gray-50 text-gray-900">Assigned To</th>
-                            <th className="bg-gray-50 text-gray-900">Created</th>
-                            <th className="bg-gray-50 text-gray-900">Actions</th>
+                            <th className="bg-gray-700 text-white">Email</th>
+                            <th className="bg-gray-700 text-white">Role</th>
+                            <th className="bg-gray-700 text-white">Joined</th>
+                            <th className="bg-gray-700 text-white">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredTickets.length === 0 ? (
+                          {users.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="text-center py-4 text-gray-500">
-                                No tickets found
+                              <td colSpan={4} className="text-center py-4 text-gray-400">
+                                No users found
                               </td>
                             </tr>
                           ) : (
-                            filteredTickets.map(ticket => (
-                              <tr key={ticket.id} className="hover:bg-gray-50">
-                                <td className="text-gray-900 font-medium">{ticket.title}</td>
+                            users.map(user => (
+                              <tr key={user.id} className="hover:bg-gray-700/50">
+                                <td className="text-white">{user.email}</td>
                                 <td>
                                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                    ticket.status === 'Open' ? 'bg-blue-100 text-blue-800' :
-                                    ticket.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
-                                    ticket.status === 'Resolved' ? 'bg-green-100 text-green-800' :
-                                    'bg-gray-100 text-gray-800'
+                                    user.role === 'Admin' ? 'bg-purple-500 text-white' :
+                                    user.role === 'Worker' ? 'bg-blue-500 text-white' :
+                                    'bg-gray-500 text-white'
                                   }`}>
-                                    {ticket.status}
+                                    {user.role}
                                   </span>
                                 </td>
-                                <td>
-                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                    ticket.priority === 'High' ? 'bg-red-100 text-red-800' :
-                                    ticket.priority === 'Medium' ? 'bg-orange-100 text-orange-800' :
-                                    'bg-green-100 text-green-800'
-                                  }`}>
-                                    {ticket.priority}
-                                  </span>
-                                </td>
-                                <td className="text-gray-900">{ticket.submitted_by}</td>
-                                <td className="text-gray-900">
-                                  {ticket.assignee_name || 'Unassigned'}
-                                </td>
-                                <td className="text-gray-900">
-                                  {new Date(ticket.created_at).toLocaleDateString()}
+                                <td className="text-gray-300">
+                                  {new Date(user.created_at).toLocaleDateString()}
                                 </td>
                                 <td>
-                                  <button className="btn btn-ghost btn-sm">
+                                  <button className="btn btn-ghost btn-sm text-gray-300 hover:text-white">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                       <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z" />
                                     </svg>
@@ -593,65 +452,191 @@ export default function AdminView() {
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {activeTab === 'settings' && (
-              <div>
-                <div className="flex justify-between items-center mb-8">
-                  <h2 className="text-2xl font-bold text-gray-900">System Settings</h2>
-                </div>
-                <div className="max-w-2xl space-y-8">
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text text-gray-900 font-medium">System Name</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      className="input input-bordered bg-white text-gray-900" 
-                      value={systemName}
-                      onChange={(e) => setSystemName(e.target.value)}
-                    />
+              {activeTab === 'tickets' && (
+                <div>
+                  <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-white">Ticket Management</h2>
                   </div>
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text text-gray-900 font-medium">Email Notifications</span>
-                    </label>
-                    <div className="flex items-center space-x-4 bg-white p-4 rounded-lg border border-gray-200">
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap gap-4">
+                      <select 
+                        className="select select-bordered bg-gray-700 text-white border-gray-600 min-w-[200px]"
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                      >
+                        <option value="">Filter by Status</option>
+                        <option value="Open">Open</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Resolved">Resolved</option>
+                        <option value="Closed">Closed</option>
+                      </select>
+                      <select 
+                        className="select select-bordered bg-gray-700 text-white border-gray-600 min-w-[200px]"
+                        value={priorityFilter}
+                        onChange={(e) => setPriorityFilter(e.target.value)}
+                      >
+                        <option value="">Filter by Priority</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                      </select>
+                      <select 
+                        className="select select-bordered bg-gray-700 text-white border-gray-600 min-w-[200px]"
+                        value={assigneeFilter}
+                        onChange={(e) => setAssigneeFilter(e.target.value)}
+                      >
+                        <option value="">Filter by Assignee</option>
+                        <option value="unassigned">Unassigned</option>
+                        {workersError ? (
+                          <option value="" disabled>Error loading workers</option>
+                        ) : (
+                          workers.map(worker => (
+                            <option key={worker.id} value={worker.id}>
+                              {worker.email}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+
+                    {error && (
+                      <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg">
+                        <span>{error}</span>
+                      </div>
+                    )}
+
+                    {isLoadingTickets ? (
+                      <div className="flex justify-center items-center py-8">
+                        <span className="loading loading-spinner loading-lg text-primary"></span>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="table w-full">
+                          <thead>
+                            <tr>
+                              <th className="bg-gray-700 text-white">Title</th>
+                              <th className="bg-gray-700 text-white">Status</th>
+                              <th className="bg-gray-700 text-white">Priority</th>
+                              <th className="bg-gray-700 text-white">Submitted By</th>
+                              <th className="bg-gray-700 text-white">Assigned To</th>
+                              <th className="bg-gray-700 text-white">Created</th>
+                              <th className="bg-gray-700 text-white">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredTickets.length === 0 ? (
+                              <tr>
+                                <td colSpan={7} className="text-center py-4 text-gray-400">
+                                  No tickets found
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredTickets.map(ticket => (
+                                <tr key={ticket.id} className="hover:bg-gray-700/50">
+                                  <td className="text-white font-medium">{ticket.title}</td>
+                                  <td>
+                                    <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                      ticket.status === 'Open' ? 'bg-purple-500 text-white' :
+                                      ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
+                                      ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
+                                      'bg-gray-500 text-white'
+                                    } min-w-[80px]`}>
+                                      {ticket.status}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                      ticket.priority === 'High' ? 'bg-red-500 text-white' :
+                                      ticket.priority === 'Medium' ? 'bg-orange-500 text-white' :
+                                      'bg-green-500 text-white'
+                                    } min-w-[60px]`}>
+                                      {ticket.priority}
+                                    </span>
+                                  </td>
+                                  <td className="text-gray-300">{ticket.submitted_by}</td>
+                                  <td className="text-gray-300">
+                                    {ticket.assignee_name || 'Unassigned'}
+                                  </td>
+                                  <td className="text-gray-300">
+                                    {new Date(ticket.created_at).toLocaleDateString()}
+                                  </td>
+                                  <td>
+                                    <button className="btn btn-ghost btn-sm text-gray-300 hover:text-white">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z" />
+                                      </svg>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'settings' && (
+                <div>
+                  <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-white">System Settings</h2>
+                  </div>
+                  <div className="max-w-2xl space-y-8">
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text text-white font-medium">System Name</span>
+                      </label>
                       <input 
-                        type="checkbox" 
-                        className="toggle toggle-primary" 
-                        checked={emailNotifications}
-                        onChange={(e) => setEmailNotifications(e.target.checked)}
+                        type="text" 
+                        className="input input-bordered bg-gray-700 text-white border-gray-600" 
+                        value={systemName}
+                        onChange={(e) => setSystemName(e.target.value)}
                       />
-                      <span className="text-gray-700">Enable email notifications for new tickets</span>
+                    </div>
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text text-white font-medium">Email Notifications</span>
+                      </label>
+                      <div className="flex items-center space-x-4 bg-gray-700 p-4 rounded-lg border border-gray-600">
+                        <input 
+                          type="checkbox" 
+                          className="toggle toggle-primary" 
+                          checked={emailNotifications}
+                          onChange={(e) => setEmailNotifications(e.target.checked)}
+                        />
+                        <span className="text-gray-300">Enable email notifications for new tickets</span>
+                      </div>
+                    </div>
+                    <div className="form-control">
+                      <label className="label">
+                        <span className="label-text text-white font-medium">Auto-Assignment</span>
+                      </label>
+                      <div className="flex items-center space-x-4 bg-gray-700 p-4 rounded-lg border border-gray-600">
+                        <input 
+                          type="checkbox" 
+                          className="toggle toggle-primary"
+                          checked={autoAssignment}
+                          onChange={(e) => setAutoAssignment(e.target.checked)}
+                        />
+                        <span className="text-gray-300">Automatically assign tickets to available workers</span>
+                      </div>
+                    </div>
+                    <div className="pt-4">
+                      <button className="btn btn-primary w-full md:w-auto">
+                        Save Settings
+                      </button>
                     </div>
                   </div>
-                  <div className="form-control">
-                    <label className="label">
-                      <span className="label-text text-gray-900 font-medium">Auto-Assignment</span>
-                    </label>
-                    <div className="flex items-center space-x-4 bg-white p-4 rounded-lg border border-gray-200">
-                      <input 
-                        type="checkbox" 
-                        className="toggle toggle-primary"
-                        checked={autoAssignment}
-                        onChange={(e) => setAutoAssignment(e.target.checked)}
-                      />
-                      <span className="text-gray-700">Automatically assign tickets to available workers</span>
-                    </div>
-                  </div>
-                  <div className="pt-4">
-                    <button className="btn btn-primary w-full md:w-auto">
-                      Save Settings
-                    </button>
-                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 } 
