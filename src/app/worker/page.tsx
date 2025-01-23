@@ -214,7 +214,13 @@ export default function WorkerView() {
                           <span className={getPriorityBadge(selectedTicket.priority)}>
                             {selectedTicket.priority}
                           </span>
-                          <span className={getStatusBadge(selectedTicket.status)}>
+                          <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            selectedTicket.status === 'Open' ? 'bg-purple-500 text-white' :
+                            selectedTicket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
+                            selectedTicket.status === 'Resolved' ? 'bg-green-500 text-white' :
+                            selectedTicket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
+                            'bg-gray-500 text-white'
+                          } min-w-[80px]`}>
                             {selectedTicket.status}
                           </span>
                         </div>
@@ -238,6 +244,7 @@ export default function WorkerView() {
                       >
                         <option value="Open">Open</option>
                         <option value="In Progress">In Progress</option>
+                        <option value="Re-Opened">Re-Opened</option>
                         <option value="Closed">Closed</option>
                       </select>
                     </div>
@@ -358,7 +365,13 @@ export default function WorkerView() {
                               <span className={getPriorityBadge(ticket.priority)}>
                                 {ticket.priority}
                               </span>
-                              <span className={getStatusBadge(ticket.status)}>
+                              <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                ticket.status === 'Open' ? 'bg-purple-500 text-white' :
+                                ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
+                                ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
+                                ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
+                                'bg-gray-500 text-white'
+                              } min-w-[80px]`}>
                                 {ticket.status}
                               </span>
                             </div>

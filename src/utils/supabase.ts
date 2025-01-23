@@ -6,8 +6,8 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Custom enum types to match the database
-export type TicketStatus = 'Open' | 'In Progress' | 'Resolved' | 'Closed';
-export type TicketPriority = 'Low' | 'Medium' | 'High';
+export type TicketStatus = 'Open' | 'In Progress' | 'Resolved' | 'Closed' | 'Re-Opened';
+export type TicketPriority = 'High' | 'Medium' | 'Low';
 
 export interface Ticket {
   id: string;

@@ -28,7 +28,7 @@ interface Ticket {
   id: string;
   title: string;
   description: string;
-  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
+  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed' | 'Re-Opened';
   priority: 'High' | 'Medium' | 'Low';
   submitted_by: string;
   assigned_to: string | null;
@@ -541,6 +541,7 @@ export default function AdminView() {
                                       ticket.status === 'Open' ? 'bg-purple-500 text-white' :
                                       ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
                                       ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
+                                      ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
                                       'bg-gray-500 text-white'
                                     } min-w-[80px]`}>
                                       {ticket.status}
