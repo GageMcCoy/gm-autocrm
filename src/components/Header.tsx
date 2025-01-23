@@ -1,65 +1,91 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSupabase } from '@/hooks/useSupabase';
 
 export default function Header() {
   const pathname = usePathname();
+  const { supabase, user } = useSupabase();
+  const [userName, setUserName] = useState('');
+
+  useEffect(() => {
+    async function fetchUserName() {
+      if (!supabase || !user) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('name')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching user name:', error);
+          return;
+        }
+
+        if (data?.name) {
+          setUserName(data.name);
+        }
+      } catch (err) {
+        console.error('Error in fetchUserName:', err);
+      }
+    }
+
+    fetchUserName();
+  }, [supabase, user]);
 
   const isActive = (path: string) => {
-    return pathname === path ? 'bg-primary text-white' : 'text-gray-300 hover:text-white';
+    return pathname === path;
   };
 
   return (
     <header className="bg-gray-800 shadow-lg">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/" className="text-xl font-bold text-white hover:text-primary transition-colors">
+        <div className="flex justify-between items-center h-16">
+          <Link href="/" className="text-white text-xl font-bold">
             gm-autocrm
           </Link>
-          
-          <nav className="flex space-x-4">
-            <Link 
-              href="/customer" 
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive('/customer')}`}
+
+          <nav className="flex items-center gap-4">
+            <Link
+              href="/customer"
+              className={`px-3 py-2 rounded-md text-sm font-medium ${
+                isActive('/customer')
+                  ? 'bg-primary text-white'
+                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+              }`}
             >
               Customer
             </Link>
-            <Link 
-              href="/worker" 
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive('/worker')}`}
+            <Link
+              href="/worker"
+              className={`px-3 py-2 rounded-md text-sm font-medium ${
+                isActive('/worker')
+                  ? 'bg-primary text-white'
+                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+              }`}
             >
               Worker
             </Link>
-            <Link 
-              href="/admin" 
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive('/admin')}`}
+            <Link
+              href="/admin"
+              className={`px-3 py-2 rounded-md text-sm font-medium ${
+                isActive('/admin')
+                  ? 'bg-primary text-white'
+                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+              }`}
             >
               Admin
             </Link>
           </nav>
 
-          <div className="flex items-center space-x-4">
-            <div className="text-sm text-gray-300">
-              <span className="font-medium">Sarah Johnson</span>
-            </div>
-            <div className="dropdown dropdown-end">
-              <label tabIndex={0} className="btn btn-ghost btn-circle avatar">
-                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
-                  <span className="text-lg font-medium text-white">GA</span>
-                </div>
-              </label>
-              <ul tabIndex={0} className="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">
-                <li>
-                  <a className="text-gray-700">Profile</a>
-                </li>
-                <li>
-                  <a className="text-gray-700">Settings</a>
-                </li>
-                <li>
-                  <a className="text-gray-700">Sign out</a>
-                </li>
-              </ul>
+          <div className="flex items-center gap-4">
+            <span className="text-white">{userName}</span>
+            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white">
+              {userName ? userName.split(' ').map(n => n[0]).join('').toUpperCase() : ''}
             </div>
           </div>
         </div>

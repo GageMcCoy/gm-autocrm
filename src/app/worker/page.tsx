@@ -5,6 +5,28 @@ import type { Ticket } from '@/utils/supabase';
 import { useSupabase } from '@/hooks/useSupabase';
 import Header from '@/components/Header';
 
+// Add new interface for messages
+interface Message {
+  id: string;
+  ticket_id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  created_at: string;
+}
+
+// Add interface for the joined data
+interface MessageWithUser {
+  id: string;
+  ticket_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  users: {
+    name: string;
+  } | null;
+}
+
 export default function WorkerView() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -12,6 +34,10 @@ export default function WorkerView() {
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [showMessages, setShowMessages] = useState(false);
   const { supabase } = useSupabase();
 
   const loadTickets = useCallback(async () => {
@@ -189,6 +215,86 @@ export default function WorkerView() {
     }
   };
 
+  // Add function to load messages
+  const loadMessages = useCallback(async (ticketId: string) => {
+    if (!supabase) return;
+
+    try {
+      setIsLoadingMessages(true);
+      
+      // First get messages
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) throw messagesError;
+
+      // Then get user names for all sender_ids
+      const senderIds = [...new Set(messagesData?.map(m => m.sender_id) || [])];
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', senderIds);
+
+      if (userError) throw userError;
+
+      // Create a map of user IDs to names
+      const userMap = new Map(userData?.map(user => [user.id, user.name]));
+
+      // Combine the data
+      const transformedData = messagesData?.map(message => ({
+        id: message.id,
+        ticket_id: message.ticket_id,
+        sender_id: message.sender_id,
+        content: message.content,
+        created_at: message.created_at,
+        sender_name: userMap.get(message.sender_id) || 'Unknown User'
+      })) || [];
+
+      setMessages(transformedData);
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      setMessages([]);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, [supabase]);
+
+  // Add effect to load messages when ticket is selected
+  useEffect(() => {
+    if (selectedTicket) {
+      loadMessages(selectedTicket.id);
+    } else {
+      setMessages([]);
+    }
+  }, [selectedTicket, loadMessages]);
+
+  // Add function to send message
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supabase || !selectedTicket || !newMessage.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .insert([{
+          ticket_id: selectedTicket.id,
+          sender_id: 'b819988e-abfa-406f-9ce5-9c34674a3824', // TODO: Replace with actual worker ID
+          content: newMessage.trim()
+        }]);
+
+      if (error) throw error;
+
+      // Clear input and reload messages
+      setNewMessage('');
+      loadMessages(selectedTicket.id);
+    } catch (err) {
+      console.error('Error sending message:', err);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-900">
       <Header />
@@ -285,7 +391,71 @@ export default function WorkerView() {
                         </svg>
                         Escalate
                       </button>
+                      <button 
+                        className="btn btn-primary gap-2"
+                        onClick={() => setShowMessages(prev => !prev)}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                        </svg>
+                        {showMessages ? 'Hide Messages' : 'Show Messages'}
+                      </button>
                     </div>
+
+                    {/* Messages Section - Only show when showMessages is true */}
+                    {showMessages && (
+                      <div className="border-t border-gray-700 mt-6 pt-6">
+                        <h3 className="text-lg font-semibold text-white mb-4">Messages</h3>
+                        <div className="space-y-4">
+                          <div className="bg-gray-700 rounded-lg p-4 h-64 overflow-y-auto">
+                            {isLoadingMessages ? (
+                              <div className="flex justify-center items-center h-full">
+                                <span className="loading loading-spinner loading-md"></span>
+                              </div>
+                            ) : messages.length > 0 ? (
+                              <div className="space-y-4">
+                                {messages.map(message => (
+                                  <div key={message.id} className="flex flex-col">
+                                    <div className="bg-gray-600 rounded-lg p-3">
+                                      <div className="flex justify-between items-start mb-1">
+                                        <span className="text-sm font-medium text-blue-300">
+                                          {message.sender_name}
+                                        </span>
+                                        <span className="text-xs text-gray-400">
+                                          {new Date(message.created_at).toLocaleString()}
+                                        </span>
+                                      </div>
+                                      <p className="text-white">{message.content}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-gray-400 text-center h-full flex items-center justify-center">
+                                No messages yet
+                              </div>
+                            )}
+                          </div>
+                          
+                          <form onSubmit={handleSendMessage} className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Type your message..."
+                              className="input input-bordered flex-1 bg-gray-700 text-white border-gray-600"
+                              value={newMessage}
+                              onChange={(e) => setNewMessage(e.target.value)}
+                            />
+                            <button
+                              type="submit"
+                              className="btn btn-primary"
+                              disabled={!newMessage.trim()}
+                            >
+                              Send
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="text-gray-400 text-center py-8">

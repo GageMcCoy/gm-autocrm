@@ -1,9 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Ticket } from '@/utils/supabase';
 import { useSupabase } from '@/hooks/useSupabase';
 import Header from '@/components/Header';
+
+// Add Message interface
+interface Message {
+  id: string;
+  ticket_id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  created_at: string;
+}
 
 export default function CustomerView() {
   const [title, setTitle] = useState('');
@@ -12,6 +22,9 @@ export default function CustomerView() {
   const [userTickets, setUserTickets] = useState<Ticket[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { supabase } = useSupabase();
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   useEffect(() => {
     async function loadUserTickets() {
@@ -34,6 +47,53 @@ export default function CustomerView() {
 
     if (supabase) {
       loadUserTickets();
+    }
+  }, [supabase]);
+
+  // Add function to load messages
+  const loadMessages = useCallback(async (ticketId: string) => {
+    if (!supabase) return;
+
+    try {
+      setIsLoadingMessages(true);
+      
+      // First get messages
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) throw messagesError;
+
+      // Then get user names for all sender_ids
+      const senderIds = [...new Set(messagesData?.map(m => m.sender_id) || [])];
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', senderIds);
+
+      if (userError) throw userError;
+
+      // Create a map of user IDs to names
+      const userMap = new Map(userData?.map(user => [user.id, user.name]));
+
+      // Combine the data
+      const transformedData = messagesData?.map(message => ({
+        id: message.id,
+        ticket_id: message.ticket_id,
+        sender_id: message.sender_id,
+        content: message.content,
+        created_at: message.created_at,
+        sender_name: userMap.get(message.sender_id) || 'Unknown User'
+      })) || [];
+
+      setMessages(transformedData);
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      setMessages([]);
+    } finally {
+      setIsLoadingMessages(false);
     }
   }, [supabase]);
 
@@ -115,7 +175,7 @@ export default function CustomerView() {
     <div className="min-h-screen bg-gray-900">
       <Header />
       <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column - Submit Ticket */}
           <div className="space-y-4">
             {/* Header Card */}
@@ -220,52 +280,86 @@ export default function CustomerView() {
 
             {/* Content Card */}
             <div className="bg-gray-800 rounded-lg shadow-lg">
-              <div className="p-6">
-                {userTickets.length === 0 ? (
-                  <div className="text-gray-400 text-center py-8">
-                    No tickets submitted yet
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {userTickets.map((ticket) => (
-                      <div key={ticket.id} className="bg-gray-700 rounded-lg border border-gray-600 hover:shadow-md">
-                        <div className="p-4">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h3 className="font-semibold text-white">{ticket.title}</h3>
-                              <p className="text-gray-300 text-sm mt-1">{ticket.description}</p>
-                              <div className="text-xs text-gray-400 mt-2">
-                                Created: {new Date(ticket.created_at).toLocaleString()}
-                              </div>
-                              {ticket.status === 'Resolved' && (
-                                <button
-                                  onClick={() => handleReOpen(ticket.id)}
-                                  className="mt-4 btn btn-sm btn-outline text-gray-300 hover:text-white hover:bg-gray-600 gap-2"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                                  </svg>
-                                  Re-Open Ticket
-                                </button>
-                              )}
+              <div className="p-6 space-y-4">
+                {userTickets.map((ticket) => (
+                  <div key={ticket.id} className="bg-gray-700 rounded-lg p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="text-lg font-semibold text-white">{ticket.title}</h3>
+                      <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        ticket.status === 'Open' ? 'bg-purple-500 text-white' :
+                        ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
+                        ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
+                        ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
+                        'bg-gray-500 text-white'
+                      } min-w-[80px]`}>
+                        {ticket.status}
+                      </span>
+                    </div>
+                    <p className="text-gray-300 mb-3">{ticket.description}</p>
+                    <div className="text-sm text-gray-400 mb-3">
+                      Created: {new Date(ticket.created_at).toLocaleString()}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      {ticket.status === 'Resolved' && (
+                        <button
+                          onClick={() => handleReOpen(ticket.id)}
+                          className="btn btn-sm btn-outline"
+                        >
+                          Re-Open Ticket
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (selectedTicketId === ticket.id) {
+                            setSelectedTicketId(null);
+                          } else {
+                            setSelectedTicketId(ticket.id);
+                            loadMessages(ticket.id);
+                          }
+                        }}
+                        className="btn btn-sm btn-primary"
+                      >
+                        {selectedTicketId === ticket.id ? 'Hide Messages' : 'View Messages'}
+                      </button>
+                    </div>
+
+                    {/* Messages Section */}
+                    {selectedTicketId === ticket.id && (
+                      <div className="mt-4 border-t border-gray-600 pt-4">
+                        <div className="bg-gray-800 rounded-lg p-4 h-48 overflow-y-auto">
+                          {isLoadingMessages ? (
+                            <div className="flex justify-center items-center h-full">
+                              <span className="loading loading-spinner loading-md"></span>
                             </div>
-                            <div className="flex flex-col gap-2">
-                              <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-sm font-medium ${
-                                ticket.status === 'Open' ? 'bg-purple-500 text-white' :
-                                ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
-                                ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
-                                ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
-                                'bg-gray-500 text-white'
-                              } min-w-[80px]`}>
-                                {ticket.status}
-                              </span>
+                          ) : messages.length > 0 ? (
+                            <div className="space-y-4">
+                              {messages.map(message => (
+                                <div key={message.id} className="flex flex-col">
+                                  <div className="bg-gray-700 rounded-lg p-3">
+                                    <div className="flex justify-between items-start mb-1">
+                                      <span className="text-sm font-medium text-blue-300">
+                                        {message.sender_name}
+                                      </span>
+                                      <span className="text-xs text-gray-400">
+                                        {new Date(message.created_at).toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <p className="text-white">{message.content}</p>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          </div>
+                          ) : (
+                            <div className="text-gray-400 text-center h-full flex items-center justify-center">
+                              No messages yet
+                            </div>
+                          )}
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
+                ))}
               </div>
             </div>
           </div>
