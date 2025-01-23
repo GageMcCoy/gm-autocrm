@@ -8,10 +8,34 @@ type TabType = 'analytics' | 'users' | 'tickets' | 'settings';
 
 interface User {
   id: string;
+  name: string;
   email: string;
   role: string;
   created_at: string;
-  last_sign_in: string | null;
+  updated_at: string;
+}
+
+interface AnalyticsData {
+  totalTickets: number;
+  openTickets: number;
+  avgResponseTime: string;
+  resolutionRate: string;
+  isLoading: boolean;
+  error: string | null;
+}
+
+interface Ticket {
+  id: string;
+  title: string;
+  description: string;
+  status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
+  priority: 'High' | 'Medium' | 'Low';
+  submitted_by: string;
+  assigned_to: string | null;
+  created_at: string;
+  updated_at: string;
+  assignee_name?: string;
+  assignee_email?: string;
 }
 
 export default function AdminView() {
@@ -23,6 +47,22 @@ export default function AdminView() {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [autoAssignment, setAutoAssignment] = useState(false);
   const [systemName, setSystemName] = useState('gm-autocrm');
+  const [analytics, setAnalytics] = useState<AnalyticsData>({
+    totalTickets: 0,
+    openTickets: 0,
+    avgResponseTime: '0h',
+    resolutionRate: '0%',
+    isLoading: true,
+    error: null
+  });
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [priorityFilter, setPriorityFilter] = useState<string>('');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('');
+  const [workers, setWorkers] = useState<User[]>([]);
+  const [workersError, setWorkersError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchUsers() {
@@ -53,6 +93,191 @@ export default function AdminView() {
       fetchUsers();
     }
   }, [activeTab, supabase]);
+
+  // Fetch analytics data
+  useEffect(() => {
+    async function fetchAnalytics() {
+      if (!supabase) return;
+
+      try {
+        setAnalytics(prev => ({ ...prev, isLoading: true, error: null }));
+
+        // Get total tickets
+        const { count: totalCount, error: totalError } = await supabase
+          .from('tickets')
+          .select('*', { count: 'exact' });
+
+        if (totalError) throw totalError;
+
+        // Get open tickets
+        const { count: openCount, error: openError } = await supabase
+          .from('tickets')
+          .select('*', { count: 'exact' })
+          .in('status', ['Open', 'In Progress']);
+
+        if (openError) throw openError;
+
+        // Get resolved tickets for resolution rate
+        const { count: resolvedCount, error: resolvedError } = await supabase
+          .from('tickets')
+          .select('*', { count: 'exact' })
+          .eq('status', 'Resolved');
+
+        if (resolvedError) throw resolvedError;
+
+        // Calculate resolution rate
+        const resolutionRate = totalCount ? ((resolvedCount || 0) / totalCount * 100).toFixed(1) : '0';
+
+        // Get average response time (time between created_at and first update)
+        const { data: ticketsWithUpdates, error: updatesError } = await supabase
+          .from('tickets')
+          .select('created_at, updated_at')
+          .not('updated_at', 'is', null);
+
+        if (updatesError) throw updatesError;
+
+        // Calculate average response time in hours
+        let avgResponse = 0;
+        if (ticketsWithUpdates && ticketsWithUpdates.length > 0) {
+          const totalResponseTime = ticketsWithUpdates.reduce((acc, ticket) => {
+            const created = new Date(ticket.created_at);
+            const updated = new Date(ticket.updated_at);
+            return acc + (updated.getTime() - created.getTime());
+          }, 0);
+          avgResponse = totalResponseTime / (ticketsWithUpdates.length * 3600000); // Convert to hours
+        }
+
+        setAnalytics({
+          totalTickets: totalCount || 0,
+          openTickets: openCount || 0,
+          avgResponseTime: `${avgResponse.toFixed(1)}h`,
+          resolutionRate: `${resolutionRate}%`,
+          isLoading: false,
+          error: null
+        });
+
+      } catch (err) {
+        console.error('Error fetching analytics:', err);
+        setAnalytics(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'Failed to load analytics data'
+        }));
+      }
+    }
+
+    if (activeTab === 'analytics' && supabase) {
+      fetchAnalytics();
+    }
+  }, [activeTab, supabase]);
+
+  // Fetch tickets
+  useEffect(() => {
+    async function fetchTickets() {
+      if (!supabase) return;
+
+      try {
+        setIsLoadingTickets(true);
+        setError(null);
+
+        const { data, error: fetchError } = await supabase
+          .from('tickets')
+          .select(`
+            *,
+            assignee:users!tickets_assigned_to_fkey (
+              name,
+              email
+            )
+          `)
+          .order('created_at', { ascending: false });
+
+        if (fetchError) throw fetchError;
+
+        // Transform the data to include assignee details in a flattened structure
+        const transformedData = (data || []).map(ticket => ({
+          ...ticket,
+          assignee_name: ticket.assignee?.name || null,
+          assignee_email: ticket.assignee?.email || null
+        }));
+
+        setTickets(transformedData);
+        setFilteredTickets(transformedData);
+      } catch (err) {
+        console.error('Error fetching tickets:', err);
+        setError('Failed to load tickets. Please try again later.');
+      } finally {
+        setIsLoadingTickets(false);
+      }
+    }
+
+    // Fetch workers for assignee filter
+    async function fetchWorkers() {
+      if (!supabase) return;
+
+      try {
+        // First, let's log all users to see what roles exist
+        const { data: allUsers, error: allUsersError } = await supabase
+          .from('users')
+          .select('id, email, name, role');
+
+        console.log('All users:', allUsers);
+
+        if (allUsersError) {
+          console.error('Error fetching all users:', allUsersError);
+          return;
+        }
+
+        // Then try to fetch workers with case-insensitive comparison
+        const { data, error: fetchError } = await supabase
+          .from('users')
+          .select('id, name, email, role, created_at, updated_at')
+          .eq('role', 'Worker');
+
+        if (fetchError) {
+          console.error('Supabase error fetching workers:', fetchError);
+          setWorkersError('Failed to load workers list');
+          return;
+        }
+
+        console.log('Workers fetched:', data);
+        setWorkers(data || []);
+        setWorkersError(null);
+      } catch (err) {
+        const error = err as Error;
+        console.error('Error fetching workers:', {
+          message: error.message,
+          stack: error.stack
+        });
+        setWorkersError('Failed to load workers list');
+      }
+    }
+
+    if (activeTab === 'tickets' && supabase) {
+      fetchTickets();
+      fetchWorkers();
+    }
+  }, [activeTab, supabase]);
+
+  // Apply filters
+  useEffect(() => {
+    let filtered = [...tickets];
+
+    if (statusFilter) {
+      filtered = filtered.filter(ticket => ticket.status === statusFilter);
+    }
+    if (priorityFilter) {
+      filtered = filtered.filter(ticket => ticket.priority === priorityFilter);
+    }
+    if (assigneeFilter) {
+      if (assigneeFilter === 'unassigned') {
+        filtered = filtered.filter(ticket => !ticket.assigned_to);
+      } else {
+        filtered = filtered.filter(ticket => ticket.assigned_to === assigneeFilter);
+      }
+    }
+
+    setFilteredTickets(filtered);
+  }, [tickets, statusFilter, priorityFilter, assigneeFilter]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -112,33 +337,57 @@ export default function AdminView() {
                 <div className="flex justify-between items-center mb-8">
                   <h2 className="text-2xl font-bold text-gray-900">Analytics</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {/* Analytics Cards */}
-                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                    <div className="p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Tickets</h3>
-                      <p className="text-3xl font-bold text-primary">123</p>
+                {analytics.error ? (
+                  <div className="alert alert-error mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{analytics.error}</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
+                      <div className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Tickets</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-3xl font-bold text-primary">{analytics.totalTickets}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
+                      <div className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Open Tickets</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-3xl font-bold text-primary">{analytics.openTickets}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
+                      <div className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Avg Response Time</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-3xl font-bold text-primary">{analytics.avgResponseTime}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
+                      <div className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Resolution Rate</h3>
+                        {analytics.isLoading ? (
+                          <span className="loading loading-spinner loading-md text-primary"></span>
+                        ) : (
+                          <p className="text-3xl font-bold text-primary">{analytics.resolutionRate}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                    <div className="p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Open Tickets</h3>
-                      <p className="text-3xl font-bold text-primary">45</p>
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                    <div className="p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Avg Response Time</h3>
-                      <p className="text-3xl font-bold text-primary">2.4h</p>
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                    <div className="p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Resolution Rate</h3>
-                      <p className="text-3xl font-bold text-primary">92%</p>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -175,14 +424,13 @@ export default function AdminView() {
                           <th className="bg-gray-50 text-gray-900">Email</th>
                           <th className="bg-gray-50 text-gray-900">Role</th>
                           <th className="bg-gray-50 text-gray-900">Joined</th>
-                          <th className="bg-gray-50 text-gray-900">Last Sign In</th>
                           <th className="bg-gray-50 text-gray-900">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {users.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="text-center py-4 text-gray-500">
+                            <td colSpan={4} className="text-center py-4 text-gray-500">
                               No users found
                             </td>
                           </tr>
@@ -201,12 +449,6 @@ export default function AdminView() {
                               </td>
                               <td className="text-gray-900">
                                 {new Date(user.created_at).toLocaleDateString()}
-                              </td>
-                              <td className="text-gray-900">
-                                {user.last_sign_in 
-                                  ? new Date(user.last_sign_in).toLocaleDateString()
-                                  : 'Never'
-                                }
                               </td>
                               <td>
                                 <button className="btn btn-ghost btn-sm">
@@ -232,30 +474,124 @@ export default function AdminView() {
                 </div>
                 <div className="space-y-6">
                   <div className="flex flex-wrap gap-4">
-                    <select className="select select-bordered bg-white text-gray-900 min-w-[200px]">
+                    <select 
+                      className="select select-bordered bg-white text-gray-900 min-w-[200px]"
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                    >
                       <option value="">Filter by Status</option>
                       <option value="Open">Open</option>
                       <option value="In Progress">In Progress</option>
                       <option value="Resolved">Resolved</option>
                       <option value="Closed">Closed</option>
                     </select>
-                    <select className="select select-bordered bg-white text-gray-900 min-w-[200px]">
+                    <select 
+                      className="select select-bordered bg-white text-gray-900 min-w-[200px]"
+                      value={priorityFilter}
+                      onChange={(e) => setPriorityFilter(e.target.value)}
+                    >
                       <option value="">Filter by Priority</option>
                       <option value="High">High</option>
                       <option value="Medium">Medium</option>
                       <option value="Low">Low</option>
                     </select>
-                    <select className="select select-bordered bg-white text-gray-900 min-w-[200px]">
+                    <select 
+                      className="select select-bordered bg-white text-gray-900 min-w-[200px]"
+                      value={assigneeFilter}
+                      onChange={(e) => setAssigneeFilter(e.target.value)}
+                    >
                       <option value="">Filter by Assignee</option>
                       <option value="unassigned">Unassigned</option>
-                      <option value="worker1">Worker 1</option>
-                      <option value="worker2">Worker 2</option>
+                      {workersError ? (
+                        <option value="" disabled>Error loading workers</option>
+                      ) : (
+                        workers.map(worker => (
+                          <option key={worker.id} value={worker.id}>
+                            {worker.email}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
-                  {/* Ticket list will go here */}
-                  <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <p className="text-gray-600">Ticket management features coming soon</p>
-                  </div>
+
+                  {error && (
+                    <div className="alert alert-error">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  {isLoadingTickets ? (
+                    <div className="flex justify-center items-center py-8">
+                      <span className="loading loading-spinner loading-lg text-primary"></span>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="table w-full">
+                        <thead>
+                          <tr>
+                            <th className="bg-gray-50 text-gray-900">Title</th>
+                            <th className="bg-gray-50 text-gray-900">Status</th>
+                            <th className="bg-gray-50 text-gray-900">Priority</th>
+                            <th className="bg-gray-50 text-gray-900">Submitted By</th>
+                            <th className="bg-gray-50 text-gray-900">Assigned To</th>
+                            <th className="bg-gray-50 text-gray-900">Created</th>
+                            <th className="bg-gray-50 text-gray-900">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredTickets.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="text-center py-4 text-gray-500">
+                                No tickets found
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredTickets.map(ticket => (
+                              <tr key={ticket.id} className="hover:bg-gray-50">
+                                <td className="text-gray-900 font-medium">{ticket.title}</td>
+                                <td>
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    ticket.status === 'Open' ? 'bg-blue-100 text-blue-800' :
+                                    ticket.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                                    ticket.status === 'Resolved' ? 'bg-green-100 text-green-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {ticket.status}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    ticket.priority === 'High' ? 'bg-red-100 text-red-800' :
+                                    ticket.priority === 'Medium' ? 'bg-orange-100 text-orange-800' :
+                                    'bg-green-100 text-green-800'
+                                  }`}>
+                                    {ticket.priority}
+                                  </span>
+                                </td>
+                                <td className="text-gray-900">{ticket.submitted_by}</td>
+                                <td className="text-gray-900">
+                                  {ticket.assignee_name || 'Unassigned'}
+                                </td>
+                                <td className="text-gray-900">
+                                  {new Date(ticket.created_at).toLocaleDateString()}
+                                </td>
+                                <td>
+                                  <button className="btn btn-ghost btn-sm">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                      <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z" />
+                                    </svg>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
