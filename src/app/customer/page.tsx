@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Ticket } from '@/utils/supabase';
 import { useSupabase } from '@/hooks/useSupabase';
-import Header from '@/components/Header';
 
 // Add Message interface
 interface Message {
@@ -21,20 +20,20 @@ export default function CustomerView() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userTickets, setUserTickets] = useState<Ticket[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { supabase } = useSupabase();
+  const { supabase, user } = useSupabase();
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   useEffect(() => {
     async function loadUserTickets() {
-      if (!supabase) return;
+      if (!supabase || !user) return;
 
       try {
         const { data, error: fetchError } = await supabase
           .from('tickets')
           .select('*')
-          // Temporarily load all tickets until we implement auth
+          .eq('submitted_by', user.id)
           .order('created_at', { ascending: false });
 
         if (fetchError) throw fetchError;
@@ -45,15 +44,15 @@ export default function CustomerView() {
       }
     }
 
-    if (supabase) {
+    if (supabase && user) {
       loadUserTickets();
     }
-  }, [supabase]);
+  }, [supabase, user]);
 
   // Update handleSubmit to remove hardcoded ID
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !description.trim() || !supabase) return;
+    if (!title.trim() || !description.trim() || !supabase || !user) return;
 
     try {
       setIsSubmitting(true);
@@ -63,7 +62,7 @@ export default function CustomerView() {
         description: description.trim(),
         status: 'Open',
         priority: 'Medium',
-        submitted_by: null, // Will be set when we implement auth
+        submitted_by: user.id,
         assigned_to: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -170,9 +169,8 @@ export default function CustomerView() {
 
   return (
     <div className="min-h-screen bg-gray-900">
-      <Header />
       <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left Column - Submit Ticket */}
           <div className="space-y-4">
             {/* Header Card */}

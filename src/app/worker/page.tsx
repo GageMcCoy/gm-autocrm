@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSupabase } from '@/hooks/useSupabase';
-import Header from '@/components/Header';
 
 interface Message {
   id: string;
@@ -26,6 +25,11 @@ interface Ticket {
   assigned_to: string | null;
   created_at: string;
   updated_at: string;
+  customer: {
+    id: string;
+    name: string;
+    email: string;
+  };
 }
 
 interface MessageResponse {
@@ -44,7 +48,8 @@ export default function WorkerView() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [messageError, setMessageError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [priorityFilter, setPriorityFilter] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -58,6 +63,7 @@ export default function WorkerView() {
 
     try {
       setIsLoading(true);
+      setTicketError(null);
       
       const { data, error: fetchError } = await supabase
         .from('tickets')
@@ -70,15 +76,31 @@ export default function WorkerView() {
           submitted_by,
           assigned_to,
           created_at,
-          updated_at
+          updated_at,
+          customer:users!tickets_submitted_by_fkey (
+            id,
+            name,
+            email
+          )
         `)
         .order('created_at', { ascending: false });
 
       if (fetchError) throw fetchError;
-      setTickets(data || []);
+      
+      // Transform the data to match the Ticket interface
+      const transformedData = (data || []).map(ticket => ({
+        ...ticket,
+        customer: {
+          id: ticket.customer?.[0]?.id || '',
+          name: ticket.customer?.[0]?.name || '',
+          email: ticket.customer?.[0]?.email || ''
+        }
+      })) as Ticket[];
+
+      setTickets(transformedData);
     } catch (error) {
       console.error('Error loading tickets:', error);
-      setError('Failed to load tickets');
+      setTicketError('Failed to load tickets');
     } finally {
       setIsLoading(false);
     }
@@ -89,6 +111,7 @@ export default function WorkerView() {
 
     try {
       setIsLoadingMessages(true);
+      setMessageError(null);
       const { data, error } = await supabase
         .from('messages')
         .select(`
@@ -122,7 +145,7 @@ export default function WorkerView() {
       setMessages(messages);
     } catch (error) {
       console.error('Error loading messages:', error);
-      setError('Failed to load messages');
+      setMessageError('Failed to load messages');
     } finally {
       setIsLoadingMessages(false);
     }
@@ -144,6 +167,37 @@ export default function WorkerView() {
     if (!supabase) return;
 
     try {
+      // If we're resolving the ticket, we need to send an email
+      if (updates.status === 'Resolved') {
+        const ticket = tickets.find(t => t.id === ticketId);
+        if (!ticket) throw new Error('Ticket not found');
+
+        try {
+          // Send the email notification
+          const response = await fetch('/api/send', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              to: ticket.customer.email,
+              customerName: ticket.customer.name,
+              ticketId: ticket.id,
+              ticketTitle: ticket.title,
+              resolutionNotes: 'Your ticket has been resolved.'
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to send email notification');
+          }
+        } catch (error) {
+          console.error('Error sending email:', error);
+          throw new Error('Failed to send email notification');
+        }
+      }
+
       const { error } = await supabase
         .from('tickets')
         .update(updates)
@@ -153,7 +207,7 @@ export default function WorkerView() {
       loadTickets();
     } catch (error) {
       console.error('Error updating ticket:', error);
-      setError('Failed to update ticket');
+      setTicketError('Failed to update ticket');
     }
   };
 
@@ -176,15 +230,19 @@ export default function WorkerView() {
       loadMessages(selectedTicket.id);
     } catch (error) {
       console.error('Error sending message:', error);
-      setError('Failed to send message');
+      setMessageError('Failed to send message');
     }
   };
 
   // Filter tickets
   const activeTickets = tickets.filter(ticket => {
-    const matchesStatus = statusFilter === '' || ticket.status === statusFilter;
-    const matchesPriority = priorityFilter === '' || ticket.priority === priorityFilter;
-    return matchesStatus && matchesPriority;
+    // First filter out resolved tickets unless explicitly showing them
+    if (statusFilter === '') {
+      if (ticket.status === 'Resolved') return false;
+    } else if (ticket.status !== statusFilter) return false;
+
+    // Then apply priority filter
+    return priorityFilter === '' || ticket.priority === priorityFilter;
   });
 
   const getPriorityBadge = (priority: Ticket['priority']) => {
@@ -219,7 +277,6 @@ export default function WorkerView() {
 
   return (
     <div className="min-h-screen bg-gray-900">
-      <Header />
       <main className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left Column - Ticket Details */}
@@ -281,6 +338,29 @@ export default function WorkerView() {
                           <option value="High">High</option>
                         </select>
                       </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          className="btn btn-success flex-1"
+                          onClick={() => handleTicketUpdate(selectedTicket.id, { status: 'Resolved' })}
+                          disabled={selectedTicket.status === 'Resolved'}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          Resolve
+                        </button>
+                        <button
+                          className="btn btn-warning flex-1"
+                          onClick={() => handleTicketUpdate(selectedTicket.id, { priority: 'High' })}
+                          disabled={selectedTicket.priority === 'High'}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                          Escalate
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-6">
@@ -295,6 +375,11 @@ export default function WorkerView() {
                     {showMessages && (
                       <div className="mt-6 space-y-4">
                         <h3 className="text-lg font-semibold text-white">Messages</h3>
+                        {messageError && (
+                          <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg mb-4">
+                            <span>{messageError}</span>
+                          </div>
+                        )}
                         <div className="bg-gray-700 rounded-lg p-4 h-64 overflow-y-auto">
                           {isLoadingMessages ? (
                             <div className="flex justify-center items-center h-full">
@@ -367,12 +452,12 @@ export default function WorkerView() {
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
-                  <option value="">All Statuses</option>
+                  <option value="">Active Tickets Only</option>
                   <option value="Open">Open</option>
                   <option value="In Progress">In Progress</option>
-                  <option value="Resolved">Resolved</option>
-                  <option value="Closed">Closed</option>
                   <option value="Re-Opened">Re-Opened</option>
+                  <option value="Resolved">Show Resolved</option>
+                  <option value="Closed">Closed</option>
                 </select>
 
                 <select 
@@ -391,9 +476,9 @@ export default function WorkerView() {
             {/* Ticket List */}
             <div className="bg-gray-800 rounded-lg shadow-lg">
               <div className="p-6">
-                {error && (
+                {ticketError && (
                   <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg mb-4">
-                    <span>{error}</span>
+                    <span>{ticketError}</span>
                   </div>
                 )}
 
