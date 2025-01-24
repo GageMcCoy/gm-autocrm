@@ -151,37 +151,6 @@ export default function WorkerView() {
     if (!supabase) return;
 
     try {
-      // If we're resolving the ticket, we need to send an email
-      if (updates.status === 'Resolved') {
-        const ticket = tickets.find(t => t.id === ticketId);
-        if (!ticket) throw new Error('Ticket not found');
-
-        try {
-          // Send the email notification
-          const response = await fetch('/api/send', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to: ticket.customer.email,
-              customerName: ticket.customer.name,
-              ticketId: ticket.id,
-              ticketTitle: ticket.title,
-              resolutionNotes: 'Your ticket has been resolved.'
-            }),
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to send email notification');
-          }
-        } catch (error) {
-          console.error('Error sending email:', error);
-          throw new Error('Failed to send email notification');
-        }
-      }
-
       const { error } = await supabase
         .from('tickets')
         .update(updates)
