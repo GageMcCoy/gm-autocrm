@@ -1,7 +1,6 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { sendTicketResolvedEmail } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 
 export async function resolveTicket({
@@ -14,17 +13,10 @@ export async function resolveTicket({
   try {
     const supabase = await createClient();
 
-    // First, get the ticket and customer details
+    // First, get the ticket details
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
-      .select(`
-        *,
-        customers (
-          id,
-          name,
-          email
-        )
-      `)
+      .select('*')
       .eq('id', ticketId)
       .single();
 
@@ -36,7 +28,7 @@ export async function resolveTicket({
     const { error: updateError } = await supabase
       .from('tickets')
       .update({
-        status: 'RESOLVED',
+        status: 'Resolved',
         resolution_notes: resolutionNotes,
         resolved_at: new Date().toISOString(),
       })
@@ -45,15 +37,6 @@ export async function resolveTicket({
     if (updateError) {
       throw new Error(updateError.message);
     }
-
-    // Send email notification
-    await sendTicketResolvedEmail({
-      to: ticket.customers.email,
-      customerName: ticket.customers.name,
-      ticketId: ticket.id,
-      ticketTitle: ticket.title,
-      resolutionNotes,
-    });
 
     // Revalidate the tickets page to show updated status
     revalidatePath('/tickets');

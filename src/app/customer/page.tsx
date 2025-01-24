@@ -25,6 +25,7 @@ export default function CustomerView() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<'active' | 'resolved'>('active');
 
   useEffect(() => {
     async function loadUserTickets() {
@@ -192,6 +193,15 @@ export default function CustomerView() {
     }
   };
 
+  // Filter tickets based on active tab
+  const filteredTickets = userTickets.filter(ticket => {
+    if (activeTab === 'active') {
+      return ticket.status !== 'Resolved';
+    } else {
+      return ticket.status === 'Resolved';
+    }
+  });
+
   return (
     <div className="min-h-screen bg-gray-900">
       <main className="container mx-auto px-4 py-8">
@@ -298,106 +308,138 @@ export default function CustomerView() {
               <p className="text-gray-400">View and manage your support tickets</p>
             </div>
 
+            {/* Tabs */}
+            <div className="bg-gray-800 rounded-lg p-2 shadow-lg">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setActiveTab('active')}
+                  className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === 'active'
+                      ? 'bg-primary text-white'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  }`}
+                >
+                  Active Tickets
+                </button>
+                <button
+                  onClick={() => setActiveTab('resolved')}
+                  className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === 'resolved'
+                      ? 'bg-primary text-white'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  }`}
+                >
+                  Resolved Tickets
+                </button>
+              </div>
+            </div>
+
             {/* Content Card */}
             <div className="bg-gray-800 rounded-lg shadow-lg">
               <div className="p-6 space-y-4">
-                {userTickets.map((ticket) => (
-                  <div key={ticket.id} className="bg-gray-700 rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="text-lg font-semibold text-white">{ticket.title}</h3>
-                      <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        ticket.status === 'Open' ? 'bg-purple-500 text-white' :
-                        ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
-                        ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
-                        ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
-                        'bg-gray-500 text-white'
-                      } min-w-[80px]`}>
-                        {ticket.status}
-                      </span>
-                    </div>
-                    <p className="text-gray-300 mb-3">{ticket.description}</p>
-                    <div className="text-sm text-gray-400 mb-3">
-                      Created: {new Date(ticket.created_at).toLocaleString()}
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      {ticket.status === 'Resolved' && (
-                        <button
-                          onClick={() => handleReOpen(ticket.id)}
-                          className="btn btn-sm btn-outline"
-                        >
-                          Re-Open Ticket
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (selectedTicketId === ticket.id) {
-                            setSelectedTicketId(null);
-                          } else {
-                            setSelectedTicketId(ticket.id);
-                            loadMessages(ticket.id);
-                          }
-                        }}
-                        className="btn btn-sm btn-primary"
-                      >
-                        {selectedTicketId === ticket.id ? 'Hide Messages' : 'View Messages'}
-                      </button>
-                    </div>
-
-                    {/* Messages Section */}
-                    {selectedTicketId === ticket.id && (
-                      <div className="mt-4 border-t border-gray-600 pt-4">
-                        <div className="bg-gray-800 rounded-lg p-4 h-48 overflow-y-auto">
-                          {isLoadingMessages ? (
-                            <div className="flex justify-center items-center h-full">
-                              <span className="loading loading-spinner loading-md"></span>
-                            </div>
-                          ) : messages.length > 0 ? (
-                            <div className="space-y-4">
-                              {messages.map(message => (
-                                <div key={message.id} className="flex flex-col">
-                                  <div className="bg-gray-700 rounded-lg p-3">
-                                    <div className="flex justify-between items-start mb-1">
-                                      <span className="text-sm font-medium text-blue-300">
-                                        {message.sender_name}
-                                      </span>
-                                      <span className="text-xs text-gray-400">
-                                        {new Date(message.created_at).toLocaleString()}
-                                      </span>
-                                    </div>
-                                    <p className="text-white">{message.content}</p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-gray-400 text-center h-full flex items-center justify-center">
-                              No messages yet
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Add message input form */}
-                        <form onSubmit={(e) => handleSendMessage(e, ticket.id)} className="mt-4 flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Type your message..."
-                            className="input input-bordered flex-1 bg-gray-700 text-white border-gray-600"
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                          />
-                          <button
-                            type="submit"
-                            className="btn btn-primary"
-                            disabled={!newMessage.trim()}
-                          >
-                            Send
-                          </button>
-                        </form>
-                      </div>
-                    )}
+                {filteredTickets.length === 0 ? (
+                  <div className="text-gray-400 text-center py-8">
+                    No {activeTab} tickets found
                   </div>
-                ))}
+                ) : (
+                  filteredTickets.map((ticket) => (
+                    <div key={ticket.id} className="bg-gray-700 rounded-lg p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-lg font-semibold text-white">{ticket.title}</h3>
+                        <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          ticket.status === 'Open' ? 'bg-purple-500 text-white' :
+                          ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
+                          ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
+                          ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
+                          'bg-gray-500 text-white'
+                        } min-w-[80px]`}>
+                          {ticket.status}
+                        </span>
+                      </div>
+                      <p className="text-gray-300 mb-3">{ticket.description}</p>
+                      <div className="text-sm text-gray-400 mb-3">
+                        Created: {new Date(ticket.created_at).toLocaleString()}
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        {ticket.status === 'Resolved' && (
+                          <button
+                            onClick={() => handleReOpen(ticket.id)}
+                            className="btn btn-sm btn-outline"
+                          >
+                            Re-Open Ticket
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (selectedTicketId === ticket.id) {
+                              setSelectedTicketId(null);
+                            } else {
+                              setSelectedTicketId(ticket.id);
+                              loadMessages(ticket.id);
+                            }
+                          }}
+                          className="btn btn-sm btn-primary"
+                        >
+                          {selectedTicketId === ticket.id ? 'Hide Messages' : 'View Messages'}
+                        </button>
+                      </div>
+
+                      {/* Messages Section */}
+                      {selectedTicketId === ticket.id && (
+                        <div className="mt-4 border-t border-gray-600 pt-4">
+                          <div className="bg-gray-800 rounded-lg p-4 h-48 overflow-y-auto">
+                            {isLoadingMessages ? (
+                              <div className="flex justify-center items-center h-full">
+                                <span className="loading loading-spinner loading-md"></span>
+                              </div>
+                            ) : messages.length > 0 ? (
+                              <div className="space-y-4">
+                                {messages.map(message => (
+                                  <div key={message.id} className="flex flex-col">
+                                    <div className="bg-gray-700 rounded-lg p-3">
+                                      <div className="flex justify-between items-start mb-1">
+                                        <span className="text-sm font-medium text-blue-300">
+                                          {message.sender_name}
+                                        </span>
+                                        <span className="text-xs text-gray-400">
+                                          {new Date(message.created_at).toLocaleString()}
+                                        </span>
+                                      </div>
+                                      <p className="text-white">{message.content}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-gray-400 text-center h-full flex items-center justify-center">
+                                No messages yet
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Add message input form */}
+                          <form onSubmit={(e) => handleSendMessage(e, ticket.id)} className="mt-4 flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Type your message..."
+                              className="input input-bordered flex-1 bg-gray-700 text-white border-gray-600"
+                              value={newMessage}
+                              onChange={(e) => setNewMessage(e.target.value)}
+                            />
+                            <button
+                              type="submit"
+                              className="btn btn-primary"
+                              disabled={!newMessage.trim()}
+                            >
+                              Send
+                            </button>
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
