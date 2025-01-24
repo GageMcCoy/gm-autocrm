@@ -34,7 +34,7 @@ export default function CustomerView() {
         const { data, error: fetchError } = await supabase
           .from('tickets')
           .select('*')
-          .eq('submitted_by', 'b819988e-abfa-406f-9ce5-9c34674a3824')
+          // Temporarily load all tickets until we implement auth
           .order('created_at', { ascending: false });
 
         if (fetchError) throw fetchError;
@@ -50,53 +50,7 @@ export default function CustomerView() {
     }
   }, [supabase]);
 
-  // Add function to load messages
-  const loadMessages = useCallback(async (ticketId: string) => {
-    if (!supabase) return;
-
-    try {
-      setIsLoadingMessages(true);
-      
-      // First get messages
-      const { data: messagesData, error: messagesError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('ticket_id', ticketId)
-        .order('created_at', { ascending: true });
-
-      if (messagesError) throw messagesError;
-
-      // Then get user names for all sender_ids
-      const senderIds = [...new Set(messagesData?.map(m => m.sender_id) || [])];
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, name')
-        .in('id', senderIds);
-
-      if (userError) throw userError;
-
-      // Create a map of user IDs to names
-      const userMap = new Map(userData?.map(user => [user.id, user.name]));
-
-      // Combine the data
-      const transformedData = messagesData?.map(message => ({
-        id: message.id,
-        ticket_id: message.ticket_id,
-        sender_id: message.sender_id,
-        content: message.content,
-        created_at: message.created_at,
-        sender_name: userMap.get(message.sender_id) || 'Unknown User'
-      })) || [];
-
-      setMessages(transformedData);
-    } catch (err) {
-      console.error('Error loading messages:', err);
-      setMessages([]);
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  }, [supabase]);
-
+  // Update handleSubmit to remove hardcoded ID
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !description.trim() || !supabase) return;
@@ -109,7 +63,7 @@ export default function CustomerView() {
         description: description.trim(),
         status: 'Open',
         priority: 'Medium',
-        submitted_by: 'b819988e-abfa-406f-9ce5-9c34674a3824', // Temporary hardcoded user ID
+        submitted_by: null, // Will be set when we implement auth
         assigned_to: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -140,6 +94,49 @@ export default function CustomerView() {
       setIsSubmitting(false);
     }
   }
+
+  // Update message handling to remove hardcoded ID
+  const loadMessages = useCallback(async (ticketId: string) => {
+    if (!supabase) return;
+
+    try {
+      setIsLoadingMessages(true);
+      
+      // First get messages
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) throw messagesError;
+
+      // Then get user names for all sender_ids
+      const senderIds = [...new Set(messagesData?.map(m => m.sender_id) || [])];
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', senderIds);
+
+      if (userError) throw userError;
+
+      // Create a map of user IDs to names
+      const userMap = new Map(userData?.map(user => [user.id, user.name]));
+
+      // Combine the data
+      const transformedData = messagesData?.map(message => ({
+        ...message,
+        sender_name: userMap.get(message.sender_id) || 'Unknown User'
+      })) || [];
+
+      setMessages(transformedData);
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      setMessages([]);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, [supabase]);
 
   async function handleReOpen(ticketId: string) {
     if (!supabase) return;

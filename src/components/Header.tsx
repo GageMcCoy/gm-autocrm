@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSupabase } from '@/hooks/useSupabase';
+import ProfileMenu from './ProfileMenu';
 
 export default function Header() {
   const pathname = usePathname();
@@ -43,50 +44,13 @@ export default function Header() {
 
   return (
     <header className="bg-gray-800 shadow-lg">
-      <div className="container mx-auto px-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          <Link href="/" className="text-white text-xl font-bold">
-            gm-autocrm
-          </Link>
-
-          <nav className="flex items-center gap-4">
-            <Link
-              href="/customer"
-              className={`px-3 py-2 rounded-md text-sm font-medium ${
-                isActive('/customer')
-                  ? 'bg-primary text-white'
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-              }`}
-            >
-              Customer
-            </Link>
-            <Link
-              href="/worker"
-              className={`px-3 py-2 rounded-md text-sm font-medium ${
-                isActive('/worker')
-                  ? 'bg-primary text-white'
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-              }`}
-            >
-              Worker
-            </Link>
-            <Link
-              href="/admin"
-              className={`px-3 py-2 rounded-md text-sm font-medium ${
-                isActive('/admin')
-                  ? 'bg-primary text-white'
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-              }`}
-            >
-              Admin
-            </Link>
-          </nav>
-
-          <div className="flex items-center gap-4">
-            <span className="text-white">{userName}</span>
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white">
-              {userName ? userName.split(' ').map(n => n[0]).join('').toUpperCase() : ''}
-            </div>
+          <div className="flex-shrink-0">
+            <h1 className="text-white text-xl font-bold">gm-autocrm</h1>
+          </div>
+          <div className="ml-4 flex items-center md:ml-6">
+            <ProfileMenu />
           </div>
         </div>
       </div>

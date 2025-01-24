@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSupabase } from '@/hooks/useSupabase';
-import Header from '@/components/Header';
 
 type TabType = 'analytics' | 'users' | 'tickets' | 'settings';
 
@@ -281,7 +280,6 @@ export default function AdminView() {
 
   return (
     <div className="min-h-screen bg-gray-900">
-      <Header />
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
           {/* Tab Navigation */}
