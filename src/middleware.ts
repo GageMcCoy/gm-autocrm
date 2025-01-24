@@ -6,10 +6,10 @@ import type { NextRequest } from 'next/server';
 const publicRoutes = ['/auth/sign-in', '/auth/sign-up'];
 
 // Define role-based route patterns
-const routePatterns = {
-  Customer: ['/customer', '/'],
-  Worker: ['/worker', '/'],
-  Admin: ['/admin', '/']
+const roleRoutes = {
+  Customer: ['/customer'],
+  Worker: ['/worker', '/customer'],
+  Admin: ['/admin', '/worker', '/customer']
 };
 
 export async function middleware(req: NextRequest) {
@@ -19,15 +19,63 @@ export async function middleware(req: NextRequest) {
     // Create a Supabase client configured to use cookies
     const supabase = createMiddlewareClient({ req, res });
 
-    // Refresh session if expired
-    await supabase.auth.getSession();
+    // Get the session
+    const { data: { session } } = await supabase.auth.getSession();
 
-    // Return the response with the session refreshed
+    const path = req.nextUrl.pathname;
+
+    // Allow public routes
+    if (publicRoutes.includes(path)) {
+      return res;
+    }
+
+    // If no session, redirect to sign in
+    if (!session) {
+      return NextResponse.redirect(new URL('/auth/sign-in', req.url));
+    }
+
+    // Get user's role
+    const { data: userData, error: roleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', session.user.id)
+      .single();
+
+    if (roleError || !userData?.role) {
+      console.error('Error fetching user role:', roleError);
+      return NextResponse.redirect(new URL('/auth/sign-in', req.url));
+    }
+
+    const role = userData.role as keyof typeof roleRoutes;
+    const allowedRoutes = roleRoutes[role] || [];
+
+    // Check if user has access to the requested route
+    const hasAccess = allowedRoutes.some(route => path.startsWith(route));
+
+    // If on root path, redirect to appropriate dashboard
+    if (path === '/') {
+      switch (role) {
+        case 'Customer':
+          return NextResponse.redirect(new URL('/customer', req.url));
+        case 'Worker':
+          return NextResponse.redirect(new URL('/worker', req.url));
+        case 'Admin':
+          return NextResponse.redirect(new URL('/admin', req.url));
+        default:
+          return NextResponse.redirect(new URL('/auth/sign-in', req.url));
+      }
+    }
+
+    // If user doesn't have access, redirect to their default route
+    if (!hasAccess) {
+      const defaultRoute = roleRoutes[role]?.[0] || '/auth/sign-in';
+      return NextResponse.redirect(new URL(defaultRoute, req.url));
+    }
+
     return res;
-
   } catch (error) {
     console.error('Middleware error:', error);
-    return res;
+    return NextResponse.redirect(new URL('/auth/sign-in', req.url));
   }
 }
 

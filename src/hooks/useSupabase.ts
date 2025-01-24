@@ -1,212 +1,113 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createClient, SupabaseClient, User, AuthError } from '@supabase/supabase-js';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useEffect, useState } from 'react';
+import { User } from '@supabase/supabase-js';
 
-// Define user role type
-export type UserRole = 'customer' | 'worker' | 'admin';
-
-// Define our custom user type that includes role
-export interface CustomUser extends Omit<User, 'role'> {
-  role?: UserRole;
-}
-
-// Define auth state type
-export interface AuthState {
-  user: CustomUser | null;
-  role: UserRole | null;
-  isLoading: boolean;
-  error: string | null;
+interface UserRole {
+  role: 'Admin' | 'Worker' | 'Customer';
 }
 
 export function useSupabase() {
-  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    role: null,
-    isLoading: true,
-    error: null,
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<UserRole['role'] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const getUser = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          throw error;
+        }
 
-    console.log('Environment check:', {
-      hasUrl: !!supabaseUrl,
-      hasKey: !!supabaseKey,
-      url: supabaseUrl
-    });
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase environment variables');
-      setAuthState(prev => ({ ...prev, error: 'Missing Supabase credentials', isLoading: false }));
-      return;
-    }
-
-    try {
-      console.log('Creating Supabase client...');
-      const client = createClient(supabaseUrl, supabaseKey);
-      console.log('Supabase client created');
-      setSupabase(client);
-
-      // Function to fetch user role
-      const fetchUserRole = async (userId: string) => {
-        try {
-          console.log('Starting role fetch for user:', userId);
-          
-          if (!client) {
-            throw new Error('Supabase client is not initialized');
-          }
-
-          // Set a timeout for the query
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Query timeout after 5 seconds')), 5000);
-          });
-
-          // Create the query with single()
-          console.log('Starting database query...');
-          const queryPromise = client
+        if (session?.user) {
+          setUser(session.user);
+          // Get user role
+          const { data: userData, error: roleError } = await supabase
             .from('users')
             .select('role')
-            .eq('id', userId)
+            .eq('id', session.user.id)
             .single();
 
-          // Race between the query and the timeout
-          console.log('Executing query with timeout...');
-          const { data, error } = await Promise.race([queryPromise, timeoutPromise])
-            .catch(err => {
-              console.error('Query failed or timed out:', err);
-              throw err;
-            }) as any;
-
-          console.log('Query response:', { data, error });
-
-          if (error) {
-            console.error('Database query error:', error);
-            throw error;
+          if (roleError) {
+            throw roleError;
           }
 
-          if (!data?.role) {
-            console.error('No role found in data:', data);
-            throw new Error('No role found');
+          if (userData) {
+            setRole(userData.role);
           }
-
-          const roleStr = data.role.toLowerCase() as UserRole;
-          console.log('Role successfully fetched:', roleStr);
-          return roleStr;
-        } catch (err) {
-          console.error('Error in fetchUserRole:', err);
-          return 'customer' as UserRole;
         }
-      };
+      } catch (error) {
+        console.error('Error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      // Handle auth state changes
-      const { data: { subscription } } = client.auth.onAuthStateChange(async (event, session) => {
-        console.log('Auth state changed:', event);
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          setAuthState({
-            user: { ...session.user } as CustomUser,
-            role: null,
-            isLoading: false,
-            error: null
-          });
-        } else if (event === 'SIGNED_OUT') {
-          setAuthState({
-            user: null,
-            role: null,
-            isLoading: false,
-            error: null
-          });
-        }
-      });
+    getUser();
 
-      // Check initial session
-      client.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user) {
-          setAuthState({
-            user: { ...session.user } as CustomUser,
-            role: null,
-            isLoading: false,
-            error: null
-          });
-        } else {
-          setAuthState(prev => ({ ...prev, isLoading: false }));
-        }
-      });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
-      return () => {
-        subscription.unsubscribe();
-      };
-    } catch (err) {
-      console.error('Error in useSupabase:', err);
-      setAuthState(prev => ({
-        ...prev,
-        error: err instanceof Error ? err.message : 'Failed to initialize Supabase',
-        isLoading: false
-      }));
-    }
-  }, []);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
-  // Sign in function
-  const signIn = async (email: string, password: string) => {
-    if (!supabase) return { data: null, error: new Error('Supabase client not initialized') };
-
-    try {
-      console.log('Attempting sign in with Supabase...');
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) throw error;
-      return { data, error: null };
-    } catch (error) {
-      console.error('Sign in error:', error);
-      return { data: null, error: error as AuthError };
-    }
-  };
-
-  // Sign out function
   const signOut = async () => {
-    if (!supabase) return { error: new Error('Supabase client not initialized') };
-
     try {
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      return { error: null };
+      if (error) {
+        throw error;
+      }
+      setUser(null);
+      setRole(null);
     } catch (error) {
-      return { error: error as AuthError };
+      console.error('Error signing out:', error);
+      throw error;
     }
   };
 
-  // Sign up function
-  const signUp = async (email: string, password: string, name: string) => {
-    if (!supabase) return { data: null, error: new Error('Supabase client not initialized') };
+  const signUp = async (email: string, password: string) => {
+    const { data: authData, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    if (error) throw error;
 
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { name }
-        }
-      });
+    // Create user record in users table
+    if (authData.user) {
+      // Generate password hash using crypto
+      const encoder = new TextEncoder();
+      const passwordData = encoder.encode(password);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', passwordData);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-      if (error) throw error;
-      return { data, error: null };
-    } catch (error) {
-      console.error('Sign up error:', error);
-      return { data: null, error: error as AuthError };
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert([{
+          id: authData.user.id,
+          email: authData.user.email,
+          password_hash: passwordHash,
+          role: 'Customer', // Default role
+          created_at: new Date().toISOString(),
+        }]);
+      if (insertError) throw insertError;
     }
+
+    return authData;
   };
 
   return {
+    user,
+    role,
+    loading,
     supabase,
-    ...authState,
-    signIn,
+    signOut,
     signUp,
-    signOut
   };
 } 

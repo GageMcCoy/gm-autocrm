@@ -11,12 +11,12 @@ export default function NavBar() {
   const { user, role, signOut } = useSupabase();
 
   const handleSignOut = async () => {
-    const { error } = await signOut();
-    if (error) {
+    try {
+      await signOut();
+      router.push('/auth/sign-in');
+    } catch (error) {
       console.error('Error signing out:', error);
-      return;
     }
-    router.push('/auth/sign-in');
   };
 
   // Get user's display name or email
@@ -27,18 +27,18 @@ export default function NavBar() {
     if (!role) return [];
 
     switch (role) {
-      case 'admin':
+      case 'Admin':
         return [
           { href: '/customer', label: 'Customer View' },
           { href: '/worker', label: 'Worker View' },
           { href: '/admin', label: 'Admin View' },
         ];
-      case 'worker':
+      case 'Worker':
         return [
           { href: '/customer', label: 'Customer View' },
           { href: '/worker', label: 'Worker View' },
         ];
-      case 'customer':
+      case 'Customer':
         return [
           { href: '/customer', label: 'Customer View' },
         ];
@@ -70,7 +70,7 @@ export default function NavBar() {
         </div>
       </div>
       <div className="flex-none gap-2">
-        {role === 'worker' && (
+        {role === 'Worker' && (
           <button className="btn btn-ghost btn-circle text-gray-700 hover:text-gray-900 hover:bg-gray-100">
             <div className="indicator">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

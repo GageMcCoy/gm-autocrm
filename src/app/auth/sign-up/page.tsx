@@ -28,8 +28,8 @@ export default function SignUpPage() {
     }
 
     try {
-      const { error } = await signUp(email, password, name);
-      if (error) throw error;
+      const response = await signUp(email, password);
+      if (!response.user) throw new Error('Failed to create account');
 
       // Show success message and redirect to sign in
       router.push('/auth/sign-in?registered=true');

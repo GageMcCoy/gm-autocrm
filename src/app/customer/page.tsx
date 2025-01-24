@@ -178,7 +178,7 @@ export default function CustomerView() {
             {/* Header Card */}
             <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
               <h2 className="text-2xl font-bold text-white">Submit a New Ticket</h2>
-              <p className="text-gray-400">Tell us about your issue and we'll help you resolve it.</p>
+              <p className="text-gray-400">Tell us about your issue and we&apos;ll help you resolve it.</p>
             </div>
 
             {/* Content Card */}

@@ -1,46 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useSupabase } from '@/hooks/useSupabase';
 import ProfileMenu from './ProfileMenu';
 
 export default function Header() {
-  const pathname = usePathname();
-  const { supabase, user } = useSupabase();
-  const [userName, setUserName] = useState('');
-
-  useEffect(() => {
-    async function fetchUserName() {
-      if (!supabase || !user) return;
-
-      try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('name')
-          .eq('id', user.id)
-          .single();
-
-        if (error) {
-          console.error('Error fetching user name:', error);
-          return;
-        }
-
-        if (data?.name) {
-          setUserName(data.name);
-        }
-      } catch (err) {
-        console.error('Error in fetchUserName:', err);
-      }
-    }
-
-    fetchUserName();
-  }, [supabase, user]);
-
-  const isActive = (path: string) => {
-    return pathname === path;
-  };
 
   return (
     <header className="bg-gray-800 shadow-lg">
