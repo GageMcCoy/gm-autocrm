@@ -6,13 +6,10 @@ import { useSupabase } from '@/hooks/useSupabase';
 interface Message {
   id: string;
   ticket_id: string;
+  sender_id: string;
+  sender_name: string;
   content: string;
   created_at: string;
-  user_id: string;
-  user: {
-    name: string;
-    email: string;
-  };
 }
 
 interface Ticket {
@@ -27,18 +24,6 @@ interface Ticket {
   updated_at: string;
   customer: {
     id: string;
-    name: string;
-    email: string;
-  };
-}
-
-interface MessageResponse {
-  id: string;
-  ticket_id: string;
-  content: string;
-  created_at: string;
-  user_id: string;
-  user: {
     name: string;
     email: string;
   };
@@ -111,41 +96,42 @@ export default function WorkerView() {
 
     try {
       setIsLoadingMessages(true);
-      setMessageError(null);
-      const { data, error } = await supabase
+      
+      // First get messages
+      const { data: messagesData, error: messagesError } = await supabase
         .from('messages')
-        .select(`
-          id,
-          ticket_id,
-          content,
-          created_at,
-          user_id,
-          user:users (
-            name,
-            email
-          )
-        `)
+        .select('*')
         .eq('ticket_id', ticketId)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
-      
-      const messages = (data as unknown as MessageResponse[]).map(msg => ({
-        id: msg.id,
-        ticket_id: msg.ticket_id,
-        content: msg.content,
-        created_at: msg.created_at,
-        user_id: msg.user_id,
-        user: {
-          name: msg.user?.name || 'Unknown',
-          email: msg.user?.email || ''
-        }
-      }));
+      if (messagesError) throw messagesError;
 
-      setMessages(messages);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      setMessageError('Failed to load messages');
+      // Then get user names for all sender_ids
+      const senderIds = [...new Set(messagesData?.map(m => m.sender_id) || [])];
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', senderIds);
+
+      if (userError) throw userError;
+
+      // Create a map of user IDs to names
+      const userMap = new Map(userData?.map(user => [user.id, user.name]));
+
+      // Combine the data
+      const transformedData = messagesData?.map(message => ({
+        id: message.id,
+        ticket_id: message.ticket_id,
+        content: message.content,
+        created_at: message.created_at,
+        sender_id: message.sender_id,
+        sender_name: userMap.get(message.sender_id) || 'Unknown User'
+      })) || [];
+
+      setMessages(transformedData);
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      setMessages([]);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -156,12 +142,10 @@ export default function WorkerView() {
   }, [loadTickets]);
 
   useEffect(() => {
-    if (selectedTicket) {
+    if (selectedTicket && showMessages) {
       loadMessages(selectedTicket.id);
-    } else {
-      setMessages([]);
     }
-  }, [selectedTicket, loadMessages]);
+  }, [selectedTicket, showMessages, loadMessages]);
 
   const handleTicketUpdate = async (ticketId: string, updates: Partial<Ticket>) => {
     if (!supabase) return;
@@ -216,18 +200,18 @@ export default function WorkerView() {
     if (!supabase || !selectedTicket || !newMessage.trim() || !user) return;
 
     try {
-      const { error } = await supabase
+      const { error: insertError } = await supabase
         .from('messages')
-        .insert([{
+        .insert({
           ticket_id: selectedTicket.id,
-          user_id: user.id,
+          sender_id: user.id,
           content: newMessage.trim()
-        }]);
+        });
 
-      if (error) throw error;
+      if (insertError) throw insertError;
 
       setNewMessage('');
-      loadMessages(selectedTicket.id);
+      await loadMessages(selectedTicket.id);
     } catch (error) {
       console.error('Error sending message:', error);
       setMessageError('Failed to send message');
@@ -278,13 +262,13 @@ export default function WorkerView() {
   return (
     <div className="min-h-screen bg-gray-900">
       <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column - Ticket Details */}
           <div className="space-y-4">
             {/* Header Card */}
             <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
               <h2 className="text-2xl font-bold text-white">Ticket Details</h2>
-              <p className="text-gray-400">View and manage ticket information</p>
+              <p className="text-gray-400">View and manage the selected ticket</p>
             </div>
 
             {/* Content Card */}
@@ -365,8 +349,8 @@ export default function WorkerView() {
 
                     <div className="mt-6">
                       <button
-                        className="btn btn-primary w-full"
                         onClick={() => setShowMessages(prev => !prev)}
+                        className="btn btn-primary w-full"
                       >
                         {showMessages ? 'Hide Messages' : 'Show Messages'}
                       </button>
@@ -391,7 +375,7 @@ export default function WorkerView() {
                                 <div key={message.id} className="bg-gray-600 rounded-lg p-3">
                                   <div className="flex justify-between items-start mb-1">
                                     <span className="text-sm font-medium text-blue-300">
-                                      {message.user.name}
+                                      {message.sender_name}
                                     </span>
                                     <span className="text-xs text-gray-400">
                                       {new Date(message.created_at).toLocaleString()}

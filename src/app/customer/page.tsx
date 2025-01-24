@@ -24,6 +24,7 @@ export default function CustomerView() {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [newMessage, setNewMessage] = useState('');
 
   useEffect(() => {
     async function loadUserTickets() {
@@ -166,6 +167,30 @@ export default function CustomerView() {
       }
     }
   }
+
+  // Add handleSendMessage function
+  const handleSendMessage = async (e: React.FormEvent, ticketId: string) => {
+    e.preventDefault();
+    if (!supabase || !newMessage.trim() || !user) return;
+
+    try {
+      const { error: insertError } = await supabase
+        .from('messages')
+        .insert({
+          ticket_id: ticketId,
+          sender_id: user.id,
+          content: newMessage.trim()
+        });
+
+      if (insertError) throw insertError;
+
+      setNewMessage('');
+      await loadMessages(ticketId);
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setError('Failed to send message');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -351,6 +376,24 @@ export default function CustomerView() {
                             </div>
                           )}
                         </div>
+
+                        {/* Add message input form */}
+                        <form onSubmit={(e) => handleSendMessage(e, ticket.id)} className="mt-4 flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Type your message..."
+                            className="input input-bordered flex-1 bg-gray-700 text-white border-gray-600"
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                          />
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={!newMessage.trim()}
+                          >
+                            Send
+                          </button>
+                        </form>
                       </div>
                     )}
                   </div>
