@@ -2,39 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground: #000;
-  --background: #fff;
+/* Let DaisyUI handle the theme */
+html {
+  min-height: 100vh;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-/* Add custom scrollbar styles */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
+/* Focus styles using standard Tailwind classes first */
+*:focus-visible {
+  outline: none;
+  @apply ring-2 ring-blue-500;
 }

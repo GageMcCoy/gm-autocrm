@@ -88,19 +88,19 @@ export async function createAIResponse(
       throw new Error('Failed to generate AI response');
     }
 
-    const data = await response.json();
-    
+    const { content } = await response.json();
+
     // Create the message with the complete content
     const message = await createMessage(supabase, {
       ticketId,
       senderId: AI_ASSISTANT_ID,
       senderName: 'AI Assistant',
-      content: data.content,
+      content,
     });
 
     return {
       id: message.id,
-      content: data.content,
+      content: message.content,
       status: 'complete'
     };
 

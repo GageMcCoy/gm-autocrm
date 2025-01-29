@@ -80,7 +80,7 @@ export default function CustomerView() {
       })) || [];
 
       // Add loading message if this is a new ticket and no AI response yet
-      const hasAIMessage = transformedData.some(msg => msg.sender_id === AI_ASSISTANT_ID);
+      const hasAIMessage = transformedData.some((msg: { sender_id: string }) => msg.sender_id === AI_ASSISTANT_ID);
       const isNewTicket = transformedData.length > 0 && 
         (Date.now() - new Date(transformedData[0].created_at).getTime() < 60000); // Within last minute
 

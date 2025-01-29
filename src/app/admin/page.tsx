@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSupabase } from '@/hooks/useSupabase';
 import TableKnowledgeBase from '@/components/knowledge-base/TableKnowledgeBase';
 import FormKnowledgeBase from '@/components/knowledge-base/FormKnowledgeBase';
+import CardAnalyticsIssues from '@/components/analytics/CardAnalyticsIssues';
 
 type TabType = 'analytics' | 'users' | 'tickets' | 'settings' | 'knowledge-base';
 
@@ -142,7 +143,7 @@ export default function AdminView() {
         // Calculate average response time in hours
         let avgResponse = 0;
         if (ticketsWithUpdates && ticketsWithUpdates.length > 0) {
-          const totalResponseTime = ticketsWithUpdates.reduce((acc, ticket) => {
+          const totalResponseTime = ticketsWithUpdates.reduce((acc: number, ticket: { created_at: string; updated_at: string }) => {
             const created = new Date(ticket.created_at);
             const updated = new Date(ticket.updated_at);
             return acc + (updated.getTime() - created.getTime());
@@ -196,9 +197,17 @@ export default function AdminView() {
 
         if (fetchError) throw fetchError;
 
-        // Transform the data to include assignee details in a flattened structure
-        const transformedData = (data || []).map(ticket => ({
-          ...ticket,
+        // Transform the data to match the Ticket interface
+        const transformedData = (data || []).map((ticket: any) => ({
+          id: ticket.id,
+          title: ticket.title,
+          description: ticket.description,
+          status: ticket.status,
+          priority: ticket.priority,
+          submitted_by: ticket.submitted_by,
+          assigned_to: ticket.assigned_to,
+          created_at: ticket.created_at,
+          updated_at: ticket.updated_at,
           assignee_name: ticket.assignee?.name || null,
           assignee_email: ticket.assignee?.email || null
         }));
@@ -287,7 +296,7 @@ export default function AdminView() {
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
           {/* Tab Navigation */}
-          <div className="bg-gray-800 p-1 rounded-lg shadow-lg">
+          <div className="bg-gray-800/50 backdrop-blur-sm p-1 rounded-lg shadow-lg">
             <div className="flex space-x-1">
               <button 
                 className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
@@ -343,53 +352,40 @@ export default function AdminView() {
           </div>
 
           {/* Content Area */}
-          <div className="bg-gray-800 rounded-lg shadow-lg">
+          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-lg">
             <div className="p-6">
               {activeTab === 'analytics' && (
-                <div>
-                  <div className="flex justify-between items-center mb-8">
-                    <h2 className="text-2xl font-bold text-white">Analytics</h2>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="card bg-gray-800/50 shadow-xl backdrop-blur-sm">
+                      <div className="card-body">
+                        <h2 className="card-title text-gray-100">Total Tickets</h2>
+                        <p className="text-4xl font-bold text-gray-100">{analytics.totalTickets}</p>
+                      </div>
+                    </div>
+                    <div className="card bg-gray-800/50 shadow-xl backdrop-blur-sm">
+                      <div className="card-body">
+                        <h2 className="card-title text-gray-100">Open Tickets</h2>
+                        <p className="text-4xl font-bold text-gray-100">{analytics.openTickets}</p>
+                      </div>
+                    </div>
+                    <div className="card bg-gray-800/50 shadow-xl backdrop-blur-sm">
+                      <div className="card-body">
+                        <h2 className="card-title text-gray-100">Avg Response Time</h2>
+                        <p className="text-4xl font-bold text-gray-100">{analytics.avgResponseTime}</p>
+                      </div>
+                    </div>
+                    <div className="card bg-gray-800/50 shadow-xl backdrop-blur-sm">
+                      <div className="card-body">
+                        <h2 className="card-title text-gray-100">Resolution Rate</h2>
+                        <p className="text-4xl font-bold text-gray-100">{analytics.resolutionRate}</p>
+                      </div>
+                    </div>
                   </div>
-                  {analytics.error ? (
-                    <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg mb-4">
-                      <span>{analytics.error}</span>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
-                        <h3 className="text-lg font-semibold text-white mb-2">Total Tickets</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-4xl font-bold text-white">{analytics.totalTickets}</p>
-                        )}
-                      </div>
-                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
-                        <h3 className="text-lg font-semibold text-white mb-2">Open Tickets</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-4xl font-bold text-white">{analytics.openTickets}</p>
-                        )}
-                      </div>
-                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
-                        <h3 className="text-lg font-semibold text-white mb-2">Avg Response Time</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-4xl font-bold text-white">{analytics.avgResponseTime}</p>
-                        )}
-                      </div>
-                      <div className="bg-gray-700 rounded-lg p-6 border border-gray-600">
-                        <h3 className="text-lg font-semibold text-white mb-2">Resolution Rate</h3>
-                        {analytics.isLoading ? (
-                          <span className="loading loading-spinner loading-md text-primary"></span>
-                        ) : (
-                          <p className="text-4xl font-bold text-white">{analytics.resolutionRate}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  
+                  <div className="grid grid-cols-1 gap-4">
+                    <CardAnalyticsIssues />
+                  </div>
                 </div>
               )}
 

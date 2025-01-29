@@ -35,7 +35,7 @@ async function initializeEmbeddings() {
       console.log(`\nProcessing batch ${i / batchSize + 1}...`);
 
       await Promise.all(
-        batch.map(async (article) => {
+        batch.map(async (article: { id: string; title: string; content: string }) => {
           try {
             console.log(`Generating embedding for article: ${article.title}`);
             

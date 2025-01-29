@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { operation, title, description, content, similarArticles, text, ticketTitle, ticketContent } = await request.json();
+    const { operation, title, description, content, similarArticles, text, ticketTitle, ticketContent, tickets } = await request.json();
 
     switch (operation) {
       case 'analyzePriority': {
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json({
-          content: response.choices[0].message.content || 'I apologize, but I was unable to generate a response. A support agent will review your ticket shortly.'
+          content: response.choices[0].message.content || ''
         });
       }
 
@@ -172,6 +172,47 @@ export async function POST(request: Request) {
         return NextResponse.json({
           suggestions: response.choices[0].message.content || ''
         });
+      }
+
+      case 'analyzeTicketPatterns': {
+        const response = await openai.chat.completions.create({
+          model: COMPLETION_MODEL,
+          messages: [
+            {
+              role: 'system',
+              content: `You are a support ticket analyzer. For each ticket, extract the 2 most important phrases that represent the core issue or request.
+                Rules:
+                - Each phrase should be 1-3 words maximum
+                - Focus on actionable items or specific issues (e.g., "password reset", "feature request", "login error")
+                - Avoid generic words
+                - Standardize similar phrases (e.g., "reset password" and "password reset" should be unified)
+                - Return ONLY a JSON array of objects with:
+                  - text: the key phrase identified
+                  - value: number of times this phrase appears (minimum 1)
+                
+                Example format:
+                [
+                  {"text": "password reset", "value": 3},
+                  {"text": "feature request", "value": 2}
+                ]`
+            },
+            {
+              role: 'user',
+              content: `Analyze these tickets:\n${tickets.map((t: any) => 
+                `Title: ${t.title}\nDescription: ${t.description}\n---\n`
+              ).join('\n')}`
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 500,
+        });
+
+        const patterns = JSON.parse(response.choices[0].message.content || '[]');
+        
+        // Sort by value (frequency) in descending order
+        patterns.sort((a: any, b: any) => b.value - a.value);
+        
+        return NextResponse.json({ patterns });
       }
 
       default:

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import Link from 'next/link';
 
 export default function SignInPage() {
   const [email, setEmail] = useState('');
@@ -39,7 +40,7 @@ export default function SignInPage() {
     setError('');
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { error: signInError, data: session } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -47,7 +48,6 @@ export default function SignInPage() {
       if (signInError) {
         if (signInError.message.includes('rate limit')) {
           setIsRateLimited(true);
-          // Get retry time from error message if available, otherwise use 60 seconds
           const retryTime = signInError.message.match(/try again after (\d+)/)?.[1];
           setRetryAfter(retryTime ? parseInt(retryTime) : 60);
           setError('Too many sign-in attempts. Please wait before trying again.');
@@ -57,7 +57,27 @@ export default function SignInPage() {
         return;
       }
 
-      router.push('/');
+      // Get user's role
+      const { data: userData, error: roleError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+
+      if (roleError || !userData?.role) {
+        setError('Error fetching user role');
+        return;
+      }
+
+      // Redirect based on role
+      const roleRoutes = {
+        Customer: '/customer',
+        Worker: '/worker',
+        Admin: '/admin'
+      };
+
+      const redirectPath = roleRoutes[userData.role as keyof typeof roleRoutes] || '/auth/sign-in';
+      router.push(redirectPath);
       router.refresh();
     } catch (err) {
       console.error('Sign in error:', err);
@@ -68,59 +88,75 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
-            Sign in to your account
-          </h2>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-500 text-white p-3 rounded-md text-sm">
-              {error}
-              {retryAfter > 0 && (
-                <div className="mt-2">
-                  Please wait {retryAfter} seconds before trying again.
-                </div>
-              )}
-            </div>
-          )}
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="card w-full max-w-sm bg-base-100 shadow-xl">
+        <div className="card-body">
+          <h2 className="card-title justify-center text-2xl font-bold">Sign in</h2>
+          
+          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            {error && (
+              <div className="alert alert-error text-sm">
+                <span>{error}</span>
+                {retryAfter > 0 && (
+                  <span className="block mt-1">
+                    Try again in {retryAfter}s
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Email</span>
+              </label>
               <input
                 type="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-700 placeholder-gray-500 text-white rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm bg-gray-800"
-                placeholder="Email address"
+                placeholder="Enter your email"
+                className="input input-bordered"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isRateLimited}
+                required
               />
             </div>
-            <div>
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Password</span>
+              </label>
               <input
                 type="password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-700 placeholder-gray-500 text-white rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm bg-gray-800"
-                placeholder="Password"
+                placeholder="Enter your password"
+                className="input input-bordered"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isRateLimited}
+                required
               />
             </div>
-          </div>
 
-          <div>
             <button
               type="submit"
+              className="btn btn-primary w-full"
               disabled={isLoading || isRateLimited}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
             >
-              {isLoading ? 'Signing in...' : isRateLimited ? `Try again in ${retryAfter}s` : 'Sign in'}
+              {isLoading ? (
+                <span className="loading loading-spinner loading-sm" />
+              ) : (
+                'Sign in'
+              )}
             </button>
-          </div>
-        </form>
+          </form>
+
+          <div className="divider my-4">OR</div>
+
+          <Link
+            href="/auth/sign-up"
+            className="btn btn-outline btn-sm w-full"
+          >
+            Create new account
+          </Link>
+        </div>
       </div>
     </div>
   );

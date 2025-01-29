@@ -73,14 +73,37 @@ export default function WorkerView() {
       if (fetchError) throw fetchError;
       
       // Transform the data to match the Ticket interface
-      const transformedData = (data || []).map(ticket => ({
-        ...ticket,
+      const transformedData = (data || []).map((ticket: {
+        id: string;
+        title: string;
+        description: string;
+        status: 'Open' | 'In Progress' | 'Resolved' | 'Closed' | 'Re-Opened';
+        priority: 'High' | 'Medium' | 'Low';
+        submitted_by: string;
+        assigned_to: string | null;
+        created_at: string;
+        updated_at: string;
+        customer: Array<{
+          id: string;
+          name: string;
+          email: string;
+        }>;
+      }) => ({
+        id: ticket.id,
+        title: ticket.title,
+        description: ticket.description,
+        status: ticket.status,
+        priority: ticket.priority,
+        submitted_by: ticket.submitted_by,
+        assigned_to: ticket.assigned_to,
+        created_at: ticket.created_at,
+        updated_at: ticket.updated_at,
         customer: {
           id: ticket.customer?.[0]?.id || '',
           name: ticket.customer?.[0]?.name || '',
           email: ticket.customer?.[0]?.email || ''
         }
-      })) as Ticket[];
+      }));
 
       setTickets(transformedData);
     } catch (error) {
