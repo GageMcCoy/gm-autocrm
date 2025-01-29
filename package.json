@@ -6,17 +6,26 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:openai": "node scripts/test-openai.js",
+    "test:ticket-api": "tsx scripts/test-ticket-api.ts",
+    "test:ticket-curl": "chmod +x scripts/test-ticket-api.sh && ./scripts/test-ticket-api.sh",
+    "test:priority": "tsx scripts/test-priority.ts",
+    "setup:vector-search": "psql -h ubskphcgyqrtccmqwmpa.supabase.co -p 5432 -d postgres -U postgres -f scripts/setup-vector-search.sql",
+    "init:embeddings": "tsx scripts/initialize-embeddings.ts"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.48.0",
+    "ai": "^4.1.10",
     "daisyui": "^4.12.23",
     "dotenv": "^16.4.7",
     "next": "15.1.5",
+    "openai": "^4.80.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "sonner": "^1.7.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -27,6 +36,7 @@
     "eslint-config-next": "15.1.5",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }

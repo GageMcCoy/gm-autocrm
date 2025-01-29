@@ -1,8 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Ticket } from '@/utils/supabase';
-import { useSupabase } from '@/hooks/useSupabase';
+import { useSupabase } from '@/providers/SupabaseProvider';
+import { toast } from 'sonner';
+import { analyzePriority } from '@/utils/openai';
+import { createTicket } from '@/services/tickets';
+import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { AI_ASSISTANT_ID } from '@/services/messages';
 
 // Add Message interface
 interface Message {
@@ -10,6 +15,15 @@ interface Message {
   ticket_id: string;
   sender_id: string;
   sender_name: string;
+  content: string;
+  created_at: string;
+}
+
+// Add Message type for payload
+interface MessagePayload {
+  id: string;
+  ticket_id: string;
+  sender_id: string;
   content: string;
   created_at: string;
 }
@@ -26,6 +40,9 @@ export default function CustomerView() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'resolved'>('active');
+
+  // Add subscription cleanup ref
+  const messageSubscription = useRef<any>(null);
 
   useEffect(() => {
     async function loadUserTickets() {
@@ -51,52 +68,174 @@ export default function CustomerView() {
     }
   }, [supabase, user]);
 
-  // Update handleSubmit to remove hardcoded ID
-  async function handleSubmit(e: React.FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim() || !supabase || !user) return;
+    if (!user || !supabase) {
+      toast.error('Please sign in to submit a ticket');
+      return;
+    }
+
+    // Store form values before clearing
+    const submittedTitle = title;
+    const submittedDescription = description;
+
+    // Immediately clear form and show loading state
+    setIsSubmitting(true);
+    setError(null);
+    setTitle('');
+    setDescription('');
+
+    // Show immediate feedback toast
+    const loadingToast = toast.loading('Creating your ticket...', {
+      duration: Infinity // We'll dismiss this manually
+    });
 
     try {
-      setIsSubmitting(true);
-      
-      const newTicket = {
-        title: title.trim(),
-        description: description.trim(),
+      // Add temporary ticket to the list
+      const tempTicket: Ticket = {
+        id: 'temp-' + Date.now(),
+        title: submittedTitle,
+        description: submittedDescription,
         status: 'Open',
-        priority: 'Medium',
+        priority: 'Medium', // Default priority until AI analyzes
         submitted_by: user.id,
         assigned_to: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
 
-      const { data, error: insertError } = await supabase
-        .from('tickets')
-        .insert([newTicket])
-        .select();
+      setUserTickets(prev => [tempTicket, ...prev]);
+      setSelectedTicketId(tempTicket.id);
+      setActiveTab('active');
 
-      if (insertError) throw insertError;
+      // Initialize messages with the user's message and loading state
+      setMessages([
+        {
+          id: 'initial-message',
+          ticket_id: tempTicket.id,
+          sender_id: user.id,
+          sender_name: user.user_metadata?.name || user.email || 'You',
+          content: submittedDescription,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 'temp-loading',
+          ticket_id: tempTicket.id,
+          sender_id: AI_ASSISTANT_ID,
+          sender_name: 'AI Assistant',
+          content: 'Analyzing your ticket and preparing a response...',
+          created_at: new Date().toISOString()
+        }
+      ]);
 
-      // Clear form
-      setTitle('');
-      setDescription('');
+      // Create actual ticket
+      const ticket = await createTicket(supabase, {
+        title: submittedTitle,
+        description: submittedDescription,
+        submittedBy: user.id,
+        customerId: user.id,
+        customerEmail: user.email || ''
+      });
 
-      // Update the tickets list with the new ticket
-      if (data) {
-        setUserTickets(prev => [...prev, data[0]]);
-      }
+      // Update UI with actual ticket
+      setUserTickets(prev => [
+        ticket,
+        ...prev.filter(t => t.id !== tempTicket.id)
+      ]);
+      setSelectedTicketId(ticket.id);
       
-    } catch (err) {
-      console.error('Error submitting ticket:', err);
-      if (err instanceof Error) {
-        setError(err.message);
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToast);
+      toast.success('Ticket submitted successfully!', {
+        action: {
+          label: 'View Ticket',
+          onClick: () => {
+            const ticketElement = document.getElementById(`ticket-${ticket.id}`);
+            if (ticketElement) {
+              ticketElement.scrollIntoView({ behavior: 'smooth' });
+            }
+          }
+        },
+        duration: 5000
+      });
+
+      // Set up real-time subscription for messages
+      if (messageSubscription.current) {
+        messageSubscription.current.unsubscribe();
       }
+
+      messageSubscription.current = supabase
+        .channel(`messages:${ticket.id}`)
+        .on(
+          'postgres_changes' as const,
+          {
+            event: '*',
+            schema: 'public',
+            table: 'messages',
+            filter: `ticket_id=eq.${ticket.id}`,
+          },
+          async (payload: RealtimePostgresChangesPayload<{
+            id: string;
+            ticket_id: string;
+            sender_id: string;
+            content: string;
+            created_at: string;
+          }>) => {
+            if (payload.eventType === 'INSERT') {
+              // Check if this is the AI response
+              if (payload.new.sender_id === AI_ASSISTANT_ID) {
+                // Replace the temporary loading message with the real AI response
+                setMessages(prevMessages => prevMessages
+                  .filter(msg => msg.id !== 'temp-loading')
+                  .concat({
+                    id: payload.new.id,
+                    ticket_id: payload.new.ticket_id,
+                    sender_id: payload.new.sender_id,
+                    sender_name: 'AI Assistant',
+                    content: payload.new.content,
+                    created_at: payload.new.created_at
+                  })
+                );
+              } else {
+                // For non-AI messages, just append them
+                const { data: userData, error: userError } = await supabase
+                  .from('users')
+                  .select('name')
+                  .eq('id', payload.new.sender_id)
+                  .single();
+
+                const newMessage: Message = {
+                  id: payload.new.id,
+                  ticket_id: payload.new.ticket_id,
+                  sender_id: payload.new.sender_id,
+                  sender_name: userData?.name || 'Unknown User',
+                  content: payload.new.content,
+                  created_at: payload.new.created_at
+                };
+
+                setMessages(prevMessages => [...prevMessages, newMessage]);
+              }
+            }
+          }
+        )
+        .subscribe();
+
+    } catch (err) {
+      console.error('Error creating ticket:', err);
+      // Restore form values on error
+      setTitle(submittedTitle);
+      setDescription(submittedDescription);
+      setError('Failed to create ticket. Please try again.');
+      toast.dismiss(loadingToast);
+      toast.error('Failed to create ticket');
+      // Remove temporary ticket if it exists
+      setUserTickets(prev => prev.filter(t => !t.id.startsWith('temp-')));
     } finally {
       setIsSubmitting(false);
     }
-  }
+  };
 
-  // Update message handling to remove hardcoded ID
+  // Update loadMessages to include subscription
   const loadMessages = useCallback(async (ticketId: string) => {
     if (!supabase) return;
 
@@ -124,13 +263,96 @@ export default function CustomerView() {
       // Create a map of user IDs to names
       const userMap = new Map(userData?.map(user => [user.id, user.name]));
 
+      // Check if there's a pending AI response
+      const hasAIMessage = messagesData?.some(msg => msg.sender_id === AI_ASSISTANT_ID);
+      
       // Combine the data
-      const transformedData = messagesData?.map(message => ({
+      let transformedData = messagesData?.map(message => ({
         ...message,
-        sender_name: userMap.get(message.sender_id) || 'Unknown User'
+        sender_name: message.sender_id === AI_ASSISTANT_ID 
+          ? 'AI Assistant' 
+          : userMap.get(message.sender_id) || 'Unknown User'
       })) || [];
 
+      // If no AI message is found and the ticket is new (within last minute),
+      // add a loading message
+      const isNewTicket = messagesData?.[0] && 
+        (Date.now() - new Date(messagesData[0].created_at).getTime() < 60000);
+      
+      if (!hasAIMessage && isNewTicket) {
+        transformedData.push({
+          id: 'temp-loading',
+          ticket_id: ticketId,
+          sender_id: AI_ASSISTANT_ID,
+          sender_name: 'AI Assistant',
+          content: 'Analyzing your ticket and preparing a response...',
+          created_at: new Date().toISOString()
+        });
+      }
+
       setMessages(transformedData);
+
+      // Set up real-time subscription
+      if (messageSubscription.current) {
+        messageSubscription.current.unsubscribe();
+      }
+
+      messageSubscription.current = supabase
+        .channel(`messages:${ticketId}`)
+        .on(
+          'postgres_changes' as const,
+          {
+            event: '*',
+            schema: 'public',
+            table: 'messages',
+            filter: `ticket_id=eq.${ticketId}`,
+          },
+          async (payload: RealtimePostgresChangesPayload<{
+            id: string;
+            ticket_id: string;
+            sender_id: string;
+            content: string;
+            created_at: string;
+          }>) => {
+            if (payload.eventType === 'INSERT') {
+              // Check if this is the AI response
+              if (payload.new.sender_id === AI_ASSISTANT_ID) {
+                // Replace the temporary loading message with the real AI response
+                setMessages(prevMessages => prevMessages
+                  .filter(msg => msg.id !== 'temp-loading')
+                  .concat({
+                    id: payload.new.id,
+                    ticket_id: payload.new.ticket_id,
+                    sender_id: payload.new.sender_id,
+                    sender_name: 'AI Assistant',
+                    content: payload.new.content,
+                    created_at: payload.new.created_at
+                  })
+                );
+              } else {
+                // For non-AI messages, just append them
+                const { data: userData, error: userError } = await supabase
+                  .from('users')
+                  .select('name')
+                  .eq('id', payload.new.sender_id)
+                  .single();
+
+                const newMessage: Message = {
+                  id: payload.new.id,
+                  ticket_id: payload.new.ticket_id,
+                  sender_id: payload.new.sender_id,
+                  sender_name: userData?.name || 'Unknown User',
+                  content: payload.new.content,
+                  created_at: payload.new.created_at
+                };
+
+                setMessages(prevMessages => [...prevMessages, newMessage]);
+              }
+            }
+          }
+        )
+        .subscribe();
+
     } catch (err) {
       console.error('Error loading messages:', err);
       setMessages([]);
@@ -138,6 +360,15 @@ export default function CustomerView() {
       setIsLoadingMessages(false);
     }
   }, [supabase]);
+
+  // Add cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (messageSubscription.current) {
+        messageSubscription.current.unsubscribe();
+      }
+    };
+  }, []);
 
   async function handleReOpen(ticketId: string) {
     if (!supabase) return;
@@ -202,6 +433,24 @@ export default function CustomerView() {
     }
   });
 
+  // Add scroll into view when selecting a ticket
+  const handleTicketSelect = (ticketId: string) => {
+    if (selectedTicketId === ticketId) {
+      setSelectedTicketId(null);
+    } else {
+      setSelectedTicketId(ticketId);
+      loadMessages(ticketId);
+      
+      // Scroll the messages section into view after a short delay
+      setTimeout(() => {
+        const messagesSection = document.getElementById(`messages-${ticketId}`);
+        if (messagesSection) {
+          messagesSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-900">
       <main className="container mx-auto px-4 py-8">
@@ -245,37 +494,6 @@ export default function CustomerView() {
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       required
-                    />
-                  </div>
-
-                  <div className="form-control w-full">
-                    <button
-                      type="button"
-                      className="btn btn-outline border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
-                      onClick={() => document.getElementById('file-upload')?.click()}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clipRule="evenodd" />
-                      </svg>
-                      Attach Files
-                    </button>
-                    <input
-                      id="file-upload"
-                      type="file"
-                      className="hidden"
-                      multiple
-                      onChange={(e) => {
-                        try {
-                          const files = e.target.files;
-                          if (!files) return;
-                          console.log('Files:', files);
-                        } catch (err) {
-                          console.error('Error handling files:', err);
-                          if (err instanceof Error) {
-                            setError(err.message);
-                          }
-                        }
-                      }}
                     />
                   </div>
 
@@ -343,18 +561,33 @@ export default function CustomerView() {
                   </div>
                 ) : (
                   filteredTickets.map((ticket) => (
-                    <div key={ticket.id} className="bg-gray-700 rounded-lg p-4">
+                    <div 
+                      key={ticket.id} 
+                      id={`ticket-${ticket.id}`}
+                      className={`bg-gray-700 rounded-lg p-4 transition-all duration-200 ${
+                        selectedTicketId === ticket.id ? 'ring-2 ring-primary' : 'hover:bg-gray-600'
+                      }`}
+                    >
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="text-lg font-semibold text-white">{ticket.title}</h3>
-                        <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          ticket.status === 'Open' ? 'bg-purple-500 text-white' :
-                          ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
-                          ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
-                          ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
-                          'bg-gray-500 text-white'
-                        } min-w-[80px]`}>
-                          {ticket.status}
-                        </span>
+                        <div className="flex gap-2 items-center">
+                          <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            ticket.priority === 'High' ? 'bg-red-500 text-white' :
+                            ticket.priority === 'Medium' ? 'bg-yellow-500 text-white' :
+                            'bg-green-500 text-white'
+                          } min-w-[60px]`}>
+                            {ticket.priority}
+                          </span>
+                          <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            ticket.status === 'Open' ? 'bg-purple-500 text-white' :
+                            ticket.status === 'In Progress' ? 'bg-yellow-500 text-white' :
+                            ticket.status === 'Resolved' ? 'bg-green-500 text-white' :
+                            ticket.status === 'Re-Opened' ? 'bg-blue-500 text-white' :
+                            'bg-gray-500 text-white'
+                          } min-w-[80px]`}>
+                            {ticket.status}
+                          </span>
+                        </div>
                       </div>
                       <p className="text-gray-300 mb-3">{ticket.description}</p>
                       <div className="text-sm text-gray-400 mb-3">
@@ -371,15 +604,8 @@ export default function CustomerView() {
                           </button>
                         )}
                         <button
-                          onClick={() => {
-                            if (selectedTicketId === ticket.id) {
-                              setSelectedTicketId(null);
-                            } else {
-                              setSelectedTicketId(ticket.id);
-                              loadMessages(ticket.id);
-                            }
-                          }}
-                          className="btn btn-sm btn-primary"
+                          onClick={() => handleTicketSelect(ticket.id)}
+                          className={`btn btn-sm ${selectedTicketId === ticket.id ? 'btn-secondary' : 'btn-primary'}`}
                         >
                           {selectedTicketId === ticket.id ? 'Hide Messages' : 'View Messages'}
                         </button>
@@ -387,8 +613,11 @@ export default function CustomerView() {
 
                       {/* Messages Section */}
                       {selectedTicketId === ticket.id && (
-                        <div className="mt-4 border-t border-gray-600 pt-4">
-                          <div className="bg-gray-800 rounded-lg p-4 h-48 overflow-y-auto">
+                        <div 
+                          id={`messages-${ticket.id}`}
+                          className="mt-4 border-t border-gray-600 pt-4"
+                        >
+                          <div className="bg-gray-800 rounded-lg p-4 h-64 overflow-y-auto">
                             {isLoadingMessages ? (
                               <div className="flex justify-center items-center h-full">
                                 <span className="loading loading-spinner loading-md"></span>
@@ -396,17 +625,35 @@ export default function CustomerView() {
                             ) : messages.length > 0 ? (
                               <div className="space-y-4">
                                 {messages.map(message => (
-                                  <div key={message.id} className="flex flex-col">
-                                    <div className="bg-gray-700 rounded-lg p-3">
-                                      <div className="flex justify-between items-start mb-1">
-                                        <span className="text-sm font-medium text-blue-300">
+                                  <div 
+                                    key={message.id} 
+                                    className={`flex flex-col ${
+                                      message.sender_id === user?.id ? 'items-end' : 'items-start'
+                                    }`}
+                                  >
+                                    <div className={`bg-gray-700 rounded-lg p-3 max-w-[85%] ${
+                                      message.sender_id === user?.id ? 'bg-primary/10' : ''
+                                    }`}>
+                                      <div className="flex justify-between items-start mb-1 gap-4">
+                                        <span className={`text-sm font-medium ${
+                                          message.sender_id === user?.id ? 'text-primary' : 'text-blue-300'
+                                        }`}>
                                           {message.sender_name}
                                         </span>
-                                        <span className="text-xs text-gray-400">
+                                        <span className="text-xs text-gray-400 whitespace-nowrap">
                                           {new Date(message.created_at).toLocaleString()}
                                         </span>
                                       </div>
-                                      <p className="text-white">{message.content}</p>
+                                      <p className="text-white whitespace-pre-wrap break-words">
+                                        {message.id === 'temp-loading' ? (
+                                          <span className="flex items-center gap-2">
+                                            Generating response...
+                                            <span className="loading loading-dots loading-sm"></span>
+                                          </span>
+                                        ) : (
+                                          message.content
+                                        )}
+                                      </p>
                                     </div>
                                   </div>
                                 ))}

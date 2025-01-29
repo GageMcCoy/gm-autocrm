@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import ClientLayout from "@/components/ClientLayout";
+import { Toaster } from 'sonner';
+import { SupabaseProvider } from '@/providers/SupabaseProvider';
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "gm-autocrm",
-  description: "Customer Support & Ticket Management System",
+  title: "AutoCRM",
+  description: "AI-Powered Customer Support Platform",
 };
 
 export default function RootLayout({
@@ -16,9 +18,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="light">
       <body className={inter.className}>
-        <ClientLayout>{children}</ClientLayout>
+        <SupabaseProvider>
+          <ClientLayout>{children}</ClientLayout>
+          <Toaster />
+        </SupabaseProvider>
       </body>
     </html>
   );

@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useSupabase } from '@/hooks/useSupabase';
+import TableKnowledgeBase from '@/components/knowledge-base/TableKnowledgeBase';
+import FormKnowledgeBase from '@/components/knowledge-base/FormKnowledgeBase';
 
-type TabType = 'analytics' | 'users' | 'tickets' | 'settings';
+type TabType = 'analytics' | 'users' | 'tickets' | 'settings' | 'knowledge-base';
 
 interface User {
   id: string;
@@ -62,6 +64,8 @@ export default function AdminView() {
   const [assigneeFilter, setAssigneeFilter] = useState<string>('');
   const [workers, setWorkers] = useState<User[]>([]);
   const [workersError, setWorkersError] = useState<string | null>(null);
+  const [showKnowledgeBaseForm, setShowKnowledgeBaseForm] = useState(false);
+  const [selectedArticleId, setSelectedArticleId] = useState<string | undefined>();
 
   useEffect(() => {
     async function fetchUsers() {
@@ -314,6 +318,16 @@ export default function AdminView() {
                 onClick={() => setActiveTab('tickets')}
               >
                 Ticket Management
+              </button>
+              <button 
+                className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
+                  activeTab === 'knowledge-base' 
+                    ? 'bg-primary text-white' 
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+                onClick={() => setActiveTab('knowledge-base')}
+              >
+                Knowledge Base
               </button>
               <button 
                 className={`flex-1 px-4 py-3 text-sm font-medium rounded-md transition-all duration-200 ${
@@ -576,6 +590,44 @@ export default function AdminView() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'knowledge-base' && (
+                <div>
+                  <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-white">Knowledge Base</h2>
+                    {!showKnowledgeBaseForm && (
+                      <button 
+                        className="btn btn-primary gap-2"
+                        onClick={() => {
+                          setSelectedArticleId(undefined);
+                          setShowKnowledgeBaseForm(true);
+                        }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                        </svg>
+                        New Article
+                      </button>
+                    )}
+                  </div>
+
+                  {showKnowledgeBaseForm ? (
+                    <FormKnowledgeBase
+                      articleId={selectedArticleId}
+                      onSuccess={() => {
+                        setShowKnowledgeBaseForm(false);
+                        setSelectedArticleId(undefined);
+                      }}
+                      onCancel={() => {
+                        setShowKnowledgeBaseForm(false);
+                        setSelectedArticleId(undefined);
+                      }}
+                    />
+                  ) : (
+                    <TableKnowledgeBase />
+                  )}
                 </div>
               )}
 

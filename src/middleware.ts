@@ -29,6 +29,11 @@ export async function middleware(req: NextRequest) {
       return res;
     }
 
+    // Allow API routes for authenticated users
+    if (path.startsWith('/api/') && session) {
+      return res;
+    }
+
     // If no session, redirect to sign in
     if (!session) {
       return NextResponse.redirect(new URL('/auth/sign-in', req.url));
@@ -49,27 +54,10 @@ export async function middleware(req: NextRequest) {
     const role = userData.role as keyof typeof roleRoutes;
     const allowedRoutes = roleRoutes[role] || [];
 
-    // Check if user has access to the requested route
+    // Check if the user has access to the requested route
     const hasAccess = allowedRoutes.some(route => path.startsWith(route));
-
-    // If on root path, redirect to appropriate dashboard
-    if (path === '/') {
-      switch (role) {
-        case 'Customer':
-          return NextResponse.redirect(new URL('/customer', req.url));
-        case 'Worker':
-          return NextResponse.redirect(new URL('/worker', req.url));
-        case 'Admin':
-          return NextResponse.redirect(new URL('/admin', req.url));
-        default:
-          return NextResponse.redirect(new URL('/auth/sign-in', req.url));
-      }
-    }
-
-    // If user doesn't have access, redirect to their default route
     if (!hasAccess) {
-      const defaultRoute = roleRoutes[role]?.[0] || '/auth/sign-in';
-      return NextResponse.redirect(new URL(defaultRoute, req.url));
+      return NextResponse.redirect(new URL('/auth/sign-in', req.url));
     }
 
     return res;
