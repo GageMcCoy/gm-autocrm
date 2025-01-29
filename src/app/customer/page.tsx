@@ -44,6 +44,50 @@ export default function CustomerView() {
   // Add subscription cleanup ref
   const messageSubscription = useRef<any>(null);
 
+  // Define loadMessages inside the component
+  const loadMessages = useCallback(async (ticketId: string) => {
+    if (!supabase) return;
+
+    try {
+      setIsLoadingMessages(true);
+      
+      // Get messages
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) throw messagesError;
+
+      // Get user names
+      const senderIds = [...new Set(messagesData?.map((m: Message) => m.sender_id) || [])];
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', senderIds);
+
+      if (userError) throw userError;
+
+      const userMap = new Map(userData?.map((user: { id: string; name: string }) => [user.id, user.name]));
+
+      // Transform messages
+      const transformedData = messagesData?.map((message: Message) => ({
+        ...message,
+        sender_name: message.sender_id === AI_ASSISTANT_ID 
+          ? 'AI Assistant' 
+          : userMap.get(message.sender_id) || 'Unknown User'
+      })) || [];
+
+      setMessages(transformedData);
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      setMessages([]);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, [supabase]);
+
   useEffect(() => {
     async function loadUserTickets() {
       if (!supabase || !user) return;
@@ -68,6 +112,84 @@ export default function CustomerView() {
     }
   }, [supabase, user]);
 
+  useEffect(() => {
+    if (!supabase || !selectedTicketId) {
+      if (messageSubscription.current) {
+        console.log('Cleaning up old subscription');
+        messageSubscription.current.unsubscribe();
+        messageSubscription.current = null;
+      }
+      return;
+    }
+
+    // Don't set up subscription for temporary tickets
+    if (selectedTicketId.startsWith('temp-')) {
+      console.log('Skipping subscription for temporary ticket');
+      return;
+    }
+
+    // Create a stable channel name
+    const channelName = 'messages';
+    console.log('Setting up subscription for channel:', channelName);
+
+    // Load initial messages
+    loadMessages(selectedTicketId);
+
+    const channel = supabase.channel(channelName);
+    
+    // Set up subscription
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `ticket_id=eq.${selectedTicketId}`,
+        },
+        async (payload) => {
+          console.log('Received new message payload:', {
+            id: payload.new.id,
+            sender_id: payload.new.sender_id,
+            is_ai: payload.new.sender_id === AI_ASSISTANT_ID,
+            content: payload.new.content,
+            ticket_id: payload.new.ticket_id
+          });
+          
+          // For any new message, add it to the messages array
+          setMessages(prevMessages => {
+            console.log('Previous messages:', prevMessages);
+            const newMessages = [
+              ...prevMessages,
+              {
+                id: payload.new.id,
+                ticket_id: payload.new.ticket_id,
+                sender_id: payload.new.sender_id,
+                sender_name: payload.new.sender_id === AI_ASSISTANT_ID ? 'AI Assistant' : 'Unknown User',
+                content: payload.new.content,
+                created_at: payload.new.created_at
+              }
+            ];
+            console.log('Updated messages:', newMessages);
+            return newMessages;
+          });
+        }
+      )
+      .subscribe(status => {
+        console.log(`Subscription status for ${channelName}:`, status);
+      });
+
+    messageSubscription.current = channel;
+
+    return () => {
+      console.log('Cleaning up subscription for channel:', channelName);
+      if (messageSubscription.current) {
+        messageSubscription.current.unsubscribe();
+        messageSubscription.current = null;
+      }
+    };
+  }, [supabase, selectedTicketId, loadMessages]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !supabase) {
@@ -91,44 +213,7 @@ export default function CustomerView() {
     });
 
     try {
-      // Add temporary ticket to the list
-      const tempTicket: Ticket = {
-        id: 'temp-' + Date.now(),
-        title: submittedTitle,
-        description: submittedDescription,
-        status: 'Open',
-        priority: 'Medium', // Default priority until AI analyzes
-        submitted_by: user.id,
-        assigned_to: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      setUserTickets(prev => [tempTicket, ...prev]);
-      setSelectedTicketId(tempTicket.id);
-      setActiveTab('active');
-
-      // Initialize messages with the user's message and loading state
-      setMessages([
-        {
-          id: 'initial-message',
-          ticket_id: tempTicket.id,
-          sender_id: user.id,
-          sender_name: user.user_metadata?.name || user.email || 'You',
-          content: submittedDescription,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'temp-loading',
-          ticket_id: tempTicket.id,
-          sender_id: AI_ASSISTANT_ID,
-          sender_name: 'AI Assistant',
-          content: 'Analyzing your ticket and preparing a response...',
-          created_at: new Date().toISOString()
-        }
-      ]);
-
-      // Create actual ticket
+      // Create actual ticket first
       const ticket = await createTicket(supabase, {
         title: submittedTitle,
         description: submittedDescription,
@@ -137,12 +222,24 @@ export default function CustomerView() {
         customerEmail: user.email || ''
       });
 
-      // Update UI with actual ticket
-      setUserTickets(prev => [
-        ticket,
-        ...prev.filter(t => t.id !== tempTicket.id)
-      ]);
+      // Add ticket to the list
+      setUserTickets(prev => [ticket, ...prev]);
+      
+      // Set selected ticket ID to trigger subscription
       setSelectedTicketId(ticket.id);
+      setActiveTab('active');
+
+      // Initialize messages with just the user's message
+      setMessages([
+        {
+          id: 'initial-message',
+          ticket_id: ticket.id,
+          sender_id: user.id,
+          sender_name: user.user_metadata?.name || user.email || 'You',
+          content: submittedDescription,
+          created_at: new Date().toISOString()
+        }
+      ]);
       
       // Dismiss loading toast and show success
       toast.dismiss(loadingToast);
@@ -159,67 +256,6 @@ export default function CustomerView() {
         duration: 5000
       });
 
-      // Set up real-time subscription for messages
-      if (messageSubscription.current) {
-        messageSubscription.current.unsubscribe();
-      }
-
-      messageSubscription.current = supabase
-        .channel(`messages:${ticket.id}`)
-        .on(
-          'postgres_changes' as const,
-          {
-            event: '*',
-            schema: 'public',
-            table: 'messages',
-            filter: `ticket_id=eq.${ticket.id}`,
-          },
-          async (payload: RealtimePostgresChangesPayload<{
-            id: string;
-            ticket_id: string;
-            sender_id: string;
-            content: string;
-            created_at: string;
-          }>) => {
-            if (payload.eventType === 'INSERT') {
-              // Check if this is the AI response
-              if (payload.new.sender_id === AI_ASSISTANT_ID) {
-                // Replace the temporary loading message with the real AI response
-                setMessages(prevMessages => prevMessages
-                  .filter(msg => msg.id !== 'temp-loading')
-                  .concat({
-                    id: payload.new.id,
-                    ticket_id: payload.new.ticket_id,
-                    sender_id: payload.new.sender_id,
-                    sender_name: 'AI Assistant',
-                    content: payload.new.content,
-                    created_at: payload.new.created_at
-                  })
-                );
-              } else {
-                // For non-AI messages, just append them
-                const { data: userData, error: userError } = await supabase
-                  .from('users')
-                  .select('name')
-                  .eq('id', payload.new.sender_id)
-                  .single();
-
-                const newMessage: Message = {
-                  id: payload.new.id,
-                  ticket_id: payload.new.ticket_id,
-                  sender_id: payload.new.sender_id,
-                  sender_name: userData?.name || 'Unknown User',
-                  content: payload.new.content,
-                  created_at: payload.new.created_at
-                };
-
-                setMessages(prevMessages => [...prevMessages, newMessage]);
-              }
-            }
-          }
-        )
-        .subscribe();
-
     } catch (err) {
       console.error('Error creating ticket:', err);
       // Restore form values on error
@@ -228,147 +264,10 @@ export default function CustomerView() {
       setError('Failed to create ticket. Please try again.');
       toast.dismiss(loadingToast);
       toast.error('Failed to create ticket');
-      // Remove temporary ticket if it exists
-      setUserTickets(prev => prev.filter(t => !t.id.startsWith('temp-')));
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  // Update loadMessages to include subscription
-  const loadMessages = useCallback(async (ticketId: string) => {
-    if (!supabase) return;
-
-    try {
-      setIsLoadingMessages(true);
-      
-      // First get messages
-      const { data: messagesData, error: messagesError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('ticket_id', ticketId)
-        .order('created_at', { ascending: true });
-
-      if (messagesError) throw messagesError;
-
-      // Then get user names for all sender_ids
-      const senderIds = [...new Set(messagesData?.map(m => m.sender_id) || [])];
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, name')
-        .in('id', senderIds);
-
-      if (userError) throw userError;
-
-      // Create a map of user IDs to names
-      const userMap = new Map(userData?.map(user => [user.id, user.name]));
-
-      // Check if there's a pending AI response
-      const hasAIMessage = messagesData?.some(msg => msg.sender_id === AI_ASSISTANT_ID);
-      
-      // Combine the data
-      let transformedData = messagesData?.map(message => ({
-        ...message,
-        sender_name: message.sender_id === AI_ASSISTANT_ID 
-          ? 'AI Assistant' 
-          : userMap.get(message.sender_id) || 'Unknown User'
-      })) || [];
-
-      // If no AI message is found and the ticket is new (within last minute),
-      // add a loading message
-      const isNewTicket = messagesData?.[0] && 
-        (Date.now() - new Date(messagesData[0].created_at).getTime() < 60000);
-      
-      if (!hasAIMessage && isNewTicket) {
-        transformedData.push({
-          id: 'temp-loading',
-          ticket_id: ticketId,
-          sender_id: AI_ASSISTANT_ID,
-          sender_name: 'AI Assistant',
-          content: 'Analyzing your ticket and preparing a response...',
-          created_at: new Date().toISOString()
-        });
-      }
-
-      setMessages(transformedData);
-
-      // Set up real-time subscription
-      if (messageSubscription.current) {
-        messageSubscription.current.unsubscribe();
-      }
-
-      messageSubscription.current = supabase
-        .channel(`messages:${ticketId}`)
-        .on(
-          'postgres_changes' as const,
-          {
-            event: '*',
-            schema: 'public',
-            table: 'messages',
-            filter: `ticket_id=eq.${ticketId}`,
-          },
-          async (payload: RealtimePostgresChangesPayload<{
-            id: string;
-            ticket_id: string;
-            sender_id: string;
-            content: string;
-            created_at: string;
-          }>) => {
-            if (payload.eventType === 'INSERT') {
-              // Check if this is the AI response
-              if (payload.new.sender_id === AI_ASSISTANT_ID) {
-                // Replace the temporary loading message with the real AI response
-                setMessages(prevMessages => prevMessages
-                  .filter(msg => msg.id !== 'temp-loading')
-                  .concat({
-                    id: payload.new.id,
-                    ticket_id: payload.new.ticket_id,
-                    sender_id: payload.new.sender_id,
-                    sender_name: 'AI Assistant',
-                    content: payload.new.content,
-                    created_at: payload.new.created_at
-                  })
-                );
-              } else {
-                // For non-AI messages, just append them
-                const { data: userData, error: userError } = await supabase
-                  .from('users')
-                  .select('name')
-                  .eq('id', payload.new.sender_id)
-                  .single();
-
-                const newMessage: Message = {
-                  id: payload.new.id,
-                  ticket_id: payload.new.ticket_id,
-                  sender_id: payload.new.sender_id,
-                  sender_name: userData?.name || 'Unknown User',
-                  content: payload.new.content,
-                  created_at: payload.new.created_at
-                };
-
-                setMessages(prevMessages => [...prevMessages, newMessage]);
-              }
-            }
-          }
-        )
-        .subscribe();
-
-    } catch (err) {
-      console.error('Error loading messages:', err);
-      setMessages([]);
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  }, [supabase]);
-
-  // Add cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (messageSubscription.current) {
-        messageSubscription.current.unsubscribe();
-      }
-    };
-  }, []);
 
   async function handleReOpen(ticketId: string) {
     if (!supabase) return;
@@ -400,7 +299,7 @@ export default function CustomerView() {
     }
   }
 
-  // Add handleSendMessage function
+  // Modify handleSendMessage to remove loadMessages call
   const handleSendMessage = async (e: React.FormEvent, ticketId: string) => {
     e.preventDefault();
     if (!supabase || !newMessage.trim() || !user) return;
@@ -417,7 +316,7 @@ export default function CustomerView() {
       if (insertError) throw insertError;
 
       setNewMessage('');
-      await loadMessages(ticketId);
+      // Remove the loadMessages call since we have realtime subscription
     } catch (err) {
       console.error('Error sending message:', err);
       setError('Failed to send message');
@@ -612,78 +511,81 @@ export default function CustomerView() {
                       </div>
 
                       {/* Messages Section */}
-                      {selectedTicketId === ticket.id && (
-                        <div 
-                          id={`messages-${ticket.id}`}
-                          className="mt-4 border-t border-gray-600 pt-4"
-                        >
-                          <div className="bg-gray-800 rounded-lg p-4 h-64 overflow-y-auto">
-                            {isLoadingMessages ? (
-                              <div className="flex justify-center items-center h-full">
-                                <span className="loading loading-spinner loading-md"></span>
-                              </div>
-                            ) : messages.length > 0 ? (
-                              <div className="space-y-4">
-                                {messages.map(message => (
-                                  <div 
-                                    key={message.id} 
-                                    className={`flex flex-col ${
-                                      message.sender_id === user?.id ? 'items-end' : 'items-start'
-                                    }`}
-                                  >
-                                    <div className={`bg-gray-700 rounded-lg p-3 max-w-[85%] ${
-                                      message.sender_id === user?.id ? 'bg-primary/10' : ''
-                                    }`}>
-                                      <div className="flex justify-between items-start mb-1 gap-4">
-                                        <span className={`text-sm font-medium ${
-                                          message.sender_id === user?.id ? 'text-primary' : 'text-blue-300'
-                                        }`}>
-                                          {message.sender_name}
-                                        </span>
-                                        <span className="text-xs text-gray-400 whitespace-nowrap">
-                                          {new Date(message.created_at).toLocaleString()}
-                                        </span>
-                                      </div>
-                                      <p className="text-white whitespace-pre-wrap break-words">
-                                        {message.id === 'temp-loading' ? (
-                                          <span className="flex items-center gap-2">
-                                            Generating response...
-                                            <span className="loading loading-dots loading-sm"></span>
+                      {selectedTicketId === ticket.id && (() => {
+                        console.log('Rendering messages:', messages);
+                        return (
+                          <div 
+                            id={`messages-${ticket.id}`}
+                            className="mt-4 border-t border-gray-600 pt-4"
+                          >
+                            <div className="bg-gray-800 rounded-lg p-4 h-64 overflow-y-auto">
+                              {isLoadingMessages ? (
+                                <div className="flex justify-center items-center h-full">
+                                  <span className="loading loading-spinner loading-md"></span>
+                                </div>
+                              ) : messages.length > 0 ? (
+                                <div className="space-y-4">
+                                  {messages.map(message => (
+                                    <div 
+                                      key={message.id} 
+                                      className={`flex flex-col ${
+                                        message.sender_id === user?.id ? 'items-end' : 'items-start'
+                                      }`}
+                                    >
+                                      <div className={`bg-gray-700 rounded-lg p-3 max-w-[85%] ${
+                                        message.sender_id === user?.id ? 'bg-primary/10' : ''
+                                      }`}>
+                                        <div className="flex justify-between items-start mb-1 gap-4">
+                                          <span className={`text-sm font-medium ${
+                                            message.sender_id === user?.id ? 'text-primary' : 'text-blue-300'
+                                          }`}>
+                                            {message.sender_name}
                                           </span>
-                                        ) : (
-                                          message.content
-                                        )}
-                                      </p>
+                                          <span className="text-xs text-gray-400 whitespace-nowrap">
+                                            {new Date(message.created_at).toLocaleString()}
+                                          </span>
+                                        </div>
+                                        <p className="text-white whitespace-pre-wrap break-words">
+                                          {message.id === 'temp-loading' ? (
+                                            <span className="flex items-center gap-2">
+                                              Generating response...
+                                              <span className="loading loading-dots loading-sm"></span>
+                                            </span>
+                                          ) : (
+                                            message.content
+                                          )}
+                                        </p>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-gray-400 text-center h-full flex items-center justify-center">
-                                No messages yet
-                              </div>
-                            )}
-                          </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-gray-400 text-center h-full flex items-center justify-center">
+                                  No messages yet
+                                </div>
+                              )}
+                            </div>
 
-                          {/* Add message input form */}
-                          <form onSubmit={(e) => handleSendMessage(e, ticket.id)} className="mt-4 flex gap-2">
-                            <input
-                              type="text"
-                              placeholder="Type your message..."
-                              className="input input-bordered flex-1 bg-gray-700 text-white border-gray-600"
-                              value={newMessage}
-                              onChange={(e) => setNewMessage(e.target.value)}
-                            />
-                            <button
-                              type="submit"
-                              className="btn btn-primary"
-                              disabled={!newMessage.trim()}
-                            >
-                              Send
-                            </button>
-                          </form>
-                        </div>
-                      )}
+                            {/* Add message input form */}
+                            <form onSubmit={(e) => handleSendMessage(e, ticket.id)} className="mt-4 flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="Type your message..."
+                                className="input input-bordered flex-1 bg-gray-700 text-white border-gray-600"
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                              />
+                              <button
+                                type="submit"
+                                className="btn btn-primary"
+                                disabled={!newMessage.trim()}
+                              >
+                                Send
+                              </button>
+                            </form>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))
                 )}
