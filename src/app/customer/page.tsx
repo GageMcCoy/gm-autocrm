@@ -79,6 +79,22 @@ export default function CustomerView() {
           : userMap.get(message.sender_id) || 'Unknown User'
       })) || [];
 
+      // Add loading message if this is a new ticket and no AI response yet
+      const hasAIMessage = transformedData.some(msg => msg.sender_id === AI_ASSISTANT_ID);
+      const isNewTicket = transformedData.length > 0 && 
+        (Date.now() - new Date(transformedData[0].created_at).getTime() < 60000); // Within last minute
+
+      if (!hasAIMessage && isNewTicket) {
+        transformedData.push({
+          id: 'temp-loading',
+          ticket_id: ticketId,
+          sender_id: AI_ASSISTANT_ID,
+          sender_name: 'AI Assistant',
+          content: 'Analyzing your ticket and preparing a response...',
+          created_at: new Date().toISOString()
+        });
+      }
+
       setMessages(transformedData);
     } catch (err) {
       console.error('Error loading messages:', err);
@@ -156,10 +172,28 @@ export default function CustomerView() {
             ticket_id: payload.new.ticket_id
           });
           
-          // For any new message, add it to the messages array
+          // For any new message, update the messages array
           setMessages(prevMessages => {
             console.log('Previous messages:', prevMessages);
-            const newMessages = [
+            
+            // If this is an AI message, remove the loading message
+            if (payload.new.sender_id === AI_ASSISTANT_ID) {
+              const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
+              return [
+                ...withoutLoading,
+                {
+                  id: payload.new.id,
+                  ticket_id: payload.new.ticket_id,
+                  sender_id: payload.new.sender_id,
+                  sender_name: 'AI Assistant',
+                  content: payload.new.content,
+                  created_at: payload.new.created_at
+                }
+              ];
+            }
+            
+            // For non-AI messages, just append
+            return [
               ...prevMessages,
               {
                 id: payload.new.id,
@@ -170,8 +204,6 @@ export default function CustomerView() {
                 created_at: payload.new.created_at
               }
             ];
-            console.log('Updated messages:', newMessages);
-            return newMessages;
           });
         }
       )
@@ -229,7 +261,7 @@ export default function CustomerView() {
       setSelectedTicketId(ticket.id);
       setActiveTab('active');
 
-      // Initialize messages with just the user's message
+      // Initialize messages with the user's message and loading state
       setMessages([
         {
           id: 'initial-message',
@@ -237,6 +269,14 @@ export default function CustomerView() {
           sender_id: user.id,
           sender_name: user.user_metadata?.name || user.email || 'You',
           content: submittedDescription,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 'temp-loading',
+          ticket_id: ticket.id,
+          sender_id: AI_ASSISTANT_ID,
+          sender_name: 'AI Assistant',
+          content: 'Analyzing your ticket and preparing a response...',
           created_at: new Date().toISOString()
         }
       ]);
