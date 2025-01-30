@@ -8,7 +8,7 @@ import { RunnableSequence } from '@langchain/core/runnables';
 // Only initialize LangChain when the function is called
 async function getModel() {
   return new ChatOpenAI({
-    modelName: process.env.OPENAI_MODEL || 'gpt-4',
+    modelName: 'gpt-4o-mini',
     temperature: 0.3,
     maxRetries: 2,
     timeout: 30000,
@@ -96,6 +96,17 @@ export async function analyzePriority(title: string, description: string) {
         Analyze the priority of this support ticket.
         Title: {title}
         Description: {description}
+
+        Priority Levels:
+        - Low: Not time sensitive, can be solved without a live customer support worker. These are typically feature requests, minor UI issues, or documentation questions.
+        - Medium: Mix of time sensitivity and potential need for customer support. These issues affect user experience but don't completely block functionality.
+        - High: Critical importance, affects core app functionality, payment processing, or security. Must be solved immediately as it significantly impacts business operations.
+
+        Consider:
+        1. Time Sensitivity: How urgent is the issue?
+        2. Business Impact: Does it affect revenue or core functionality?
+        3. User Impact: How many users are affected?
+        4. Support Need: Does it require immediate human intervention?
         
         Respond in JSON format with 'priority' (High, Medium, or Low) and 'reason'.
       `),
@@ -161,13 +172,25 @@ export async function generateFollowUpResponse(
         Latest User Message:
         {userMessage}
 
+        Resolution Detection Rules:
+        1. If the user's message contains ANY of these indicators, mark as resolved with confidence 1.0:
+           - "yes that resolved my issue"
+           - "that worked"
+           - "it's fixed"
+           - "that solved it"
+           - "problem solved"
+           - "issue resolved"
+           - Any clear affirmative response to a resolution question
+        2. If unsure about resolution, keep confidence below 0.8
+        3. If the user expresses any doubt or new issues, set status to 'continue'
+
         Instructions:
         1. Maintain context from the previous conversation
         2. Use knowledge base articles when relevant
-        3. If you can fully resolve the issue:
-           - Provide the solution clearly
-           - Mark as potentially resolved
-           - Ask for confirmation
+        3. If resolution is detected:
+           - Set status to 'potential_resolution'
+           - Set confidence to 1.0
+           - Thank them and ask if there's anything else they need help with
         4. If you need more information:
            - Ask specific questions
            - Keep the conversation focused

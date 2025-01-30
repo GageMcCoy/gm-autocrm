@@ -197,7 +197,7 @@ function UsersTab() {
       }
     }
 
-    fetchUsers();
+      fetchUsers();
   }, [supabase]);
 
   // Filter users based on search query
@@ -305,7 +305,7 @@ function TicketsTab() {
       try {
         setIsLoading(true);
         setError(null);
-        
+
         // Fetch tickets with assignee information
         const { data: ticketsData, error: ticketsError } = await supabase
           .from('tickets')
@@ -392,7 +392,7 @@ function TicketsTab() {
 
       if (messagesError) throw messagesError;
       setMessages(messagesData || []);
-    } catch (err) {
+      } catch (err) {
       console.error('Error loading messages:', err);
       setMessages([]);
     } finally {
@@ -479,62 +479,62 @@ function TicketsTab() {
     return (
       <div className="bg-gray-800/50 rounded-lg p-4">
         <div className="alert alert-error">
-          <span>{error}</span>
-        </div>
-      </div>
+                      <span>{error}</span>
+                    </div>
+                    </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+                  <div className="space-y-6">
       <div className="flex gap-4">
-        <select 
+                      <select 
           className="select select-bordered bg-gray-800/50"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                      >
           <option value="">All Statuses</option>
-          <option value="Open">Open</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Resolved">Resolved</option>
-          <option value="Closed">Closed</option>
-        </select>
+                        <option value="Open">Open</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Resolved">Resolved</option>
+                        <option value="Closed">Closed</option>
+                      </select>
 
-        <select 
+                      <select 
           className="select select-bordered bg-gray-800/50"
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-        >
+                        value={priorityFilter}
+                        onChange={(e) => setPriorityFilter(e.target.value)}
+                      >
           <option value="">All Priorities</option>
-          <option value="High">High</option>
-          <option value="Medium">Medium</option>
-          <option value="Low">Low</option>
-        </select>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                      </select>
 
-        <select 
+                      <select 
           className="select select-bordered bg-gray-800/50"
-          value={assigneeFilter}
-          onChange={(e) => setAssigneeFilter(e.target.value)}
-        >
+                        value={assigneeFilter}
+                        onChange={(e) => setAssigneeFilter(e.target.value)}
+                      >
           <option value="">All Assignees</option>
-          <option value="unassigned">Unassigned</option>
+                        <option value="unassigned">Unassigned</option>
           {workers.map((worker) => (
-            <option key={worker.id} value={worker.id}>
+                            <option key={worker.id} value={worker.id}>
               {worker.name}
-            </option>
+                            </option>
           ))}
-        </select>
-      </div>
+                      </select>
+                    </div>
 
       <div className="bg-gray-800/50 rounded-lg">
         <div className="overflow-x-auto">
           {isLoading ? (
             <div className="flex justify-center items-center h-32">
               <span className="loading loading-spinner loading-lg"></span>
-            </div>
-          ) : (
-            <table className="table w-full">
-              <thead>
+                      </div>
+                    ) : (
+                        <table className="table w-full">
+                          <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-gray-400 font-normal">Title</th>
                   <th className="text-gray-400 font-normal">Status</th>
@@ -542,40 +542,40 @@ function TicketsTab() {
                   <th className="text-gray-400 font-normal">Assignee</th>
                   <th className="text-gray-400 font-normal">Created</th>
                   <th className="text-gray-400 font-normal">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+                            </tr>
+                          </thead>
+                          <tbody>
                 {filteredTickets.map((ticket) => (
                   <tr key={ticket.id} className="border-b border-gray-800/50">
                     <td className="text-gray-300">{ticket.title}</td>
                     <td>
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(ticket.status)}`}>
-                        {ticket.status}
-                      </span>
-                    </td>
-                    <td>
+                                      {ticket.status}
+                                    </span>
+                                  </td>
+                                  <td>
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(ticket.priority)}`}>
-                        {ticket.priority}
-                      </span>
-                    </td>
-                    <td className="text-gray-300">
+                                      {ticket.priority}
+                                    </span>
+                                  </td>
+                                  <td className="text-gray-300">
                       {ticket.assignee?.name || 'Unassigned'}
-                    </td>
+                                  </td>
                     <td className="text-gray-400">
-                      {new Date(ticket.created_at).toLocaleDateString()}
-                    </td>
-                    <td>
+                                    {new Date(ticket.created_at).toLocaleDateString()}
+                                  </td>
+                                  <td>
                       <button 
                         className="text-gray-400 hover:text-gray-200"
                         onClick={() => handleView(ticket)}
                       >
                         View
-                      </button>
-                    </td>
-                  </tr>
+                                    </button>
+                                  </td>
+                                </tr>
                 ))}
-              </tbody>
-            </table>
+                          </tbody>
+                        </table>
           )}
         </div>
       </div>
@@ -636,8 +636,8 @@ function TicketsTab() {
                 ) : (
                   <div className="text-gray-400 text-center py-8">
                     No messages yet
-                  </div>
-                )}
+                      </div>
+                    )}
               </div>
 
               {/* Message Input */}
@@ -658,9 +658,9 @@ function TicketsTab() {
                 </button>
               </form>
             </div>
-          </div>
-        </div>
-      )}
+                  </div>
+                </div>
+              )}
     </div>
   );
 }
@@ -847,7 +847,7 @@ function KnowledgeBaseTab() {
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold text-gray-200">Knowledge Base Articles</h2>
         <div className="flex gap-3">
-          <button 
+                      <button 
             className={`btn btn-outline ${isSyncing ? 'loading' : ''}`}
             onClick={handleSync}
             disabled={isSyncing}
@@ -858,8 +858,8 @@ function KnowledgeBaseTab() {
             className="btn btn-primary bg-indigo-500 hover:bg-indigo-600"
             onClick={handleCreateNew}
           >
-            New Article
-          </button>
+                        New Article
+                      </button>
         </div>
       </div>
 
@@ -923,7 +923,7 @@ function KnowledgeBaseTab() {
             </table>
           )}
         </div>
-      </div>
+                  </div>
 
       {/* Edit Modal */}
       {isEditModalOpen && selectedArticle && (
@@ -1034,8 +1034,8 @@ function KnowledgeBaseTab() {
               </span>
             </div>
           </div>
-        </div>
-      )}
+                </div>
+              )}
 
       {/* New Article Modal */}
       {isNewArticleModalOpen && (
@@ -1054,10 +1054,10 @@ function KnowledgeBaseTab() {
                 onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
                 placeholder="Enter article title"
               />
-            </div>
+                  </div>
 
-            <div className="form-control">
-              <label className="label">
+                    <div className="form-control">
+                      <label className="label">
                 <span className="label-text text-gray-300">Content</span>
               </label>
               <textarea
@@ -1071,20 +1071,20 @@ function KnowledgeBaseTab() {
             <div className="form-control">
               <label className="label">
                 <span className="label-text text-gray-300">Tags (comma-separated)</span>
-              </label>
-              <input
-                type="text"
+                      </label>
+                      <input 
+                        type="text" 
                 className="input input-bordered bg-gray-700 text-gray-200"
                 value={editForm.tags.join(', ')}
                 onChange={(e) => setEditForm({ ...editForm, tags: e.target.value.split(',').map(tag => tag.trim()) })}
                 placeholder="account, billing, features, etc."
-              />
-            </div>
+                      />
+                    </div>
 
-            <div className="form-control">
-              <label className="label">
+                    <div className="form-control">
+                      <label className="label">
                 <span className="label-text text-gray-300">Status</span>
-              </label>
+                      </label>
               <select
                 className="select select-bordered bg-gray-700 text-gray-200"
                 value={editForm.status}
@@ -1125,13 +1125,13 @@ function SettingsTab() {
         <div className="form-control">
           <label className="label cursor-pointer">
             <span className="label-text text-white">Email Notifications</span>
-            <input
-              type="checkbox"
+                        <input 
+                          type="checkbox" 
               className="toggle"
               defaultChecked
-            />
+                        />
           </label>
-        </div>
+                      </div>
 
         <div className="form-control">
           <label className="label cursor-pointer">
@@ -1141,18 +1141,18 @@ function SettingsTab() {
               className="toggle"
             />
           </label>
-        </div>
+                    </div>
 
-        <div className="form-control">
-          <label className="label">
+                    <div className="form-control">
+                      <label className="label">
             <span className="label-text text-white">System Name</span>
-          </label>
-          <input
+                      </label>
+                        <input 
             type="text"
             className="input input-bordered bg-gray-700 text-white"
             defaultValue="gm-autocrm"
           />
-        </div>
+                      </div>
 
         <div className="form-control">
           <label className="label">
@@ -1163,13 +1163,13 @@ function SettingsTab() {
             className="input input-bordered bg-gray-700 text-white"
             defaultValue="support@example.com"
           />
-        </div>
+                    </div>
 
         <button className="btn btn-primary w-full">
           Save Changes
-        </button>
-      </div>
-    </div>
+                      </button>
+                    </div>
+                  </div>
   );
 }
 
@@ -1212,7 +1212,7 @@ export default function AdminDashboard() {
         >
           Settings
         </button>
-      </div>
+                </div>
 
       {/* Tab Content */}
       <div className="mt-6">
@@ -1225,7 +1225,7 @@ export default function AdminDashboard() {
         {activeTab === 'tickets' && <TicketsTab />}
         {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
         {activeTab === 'settings' && <SettingsTab />}
-      </div>
+            </div>
     </div>
   );
 } 

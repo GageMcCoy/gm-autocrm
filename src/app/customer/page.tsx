@@ -49,53 +49,6 @@ type DatabaseChanges = RealtimePostgresChangesPayload<{
   old: MessagePayload;
 }>;
 
-function ResolutionConfirmDialog({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  resolution 
-}: { 
-  isOpen: boolean; 
-  onClose: () => void; 
-  onConfirm: (isResolved: boolean) => void;
-  resolution?: Message['resolution'];
-}) {
-  if (!isOpen || !resolution) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-base-100 p-6 rounded-lg shadow-xl max-w-md w-full">
-        <h3 className="text-lg font-bold mb-4">Issue Resolution</h3>
-        <p className="mb-4">
-          {resolution.status === 'potential_resolution' 
-            ? 'Has your issue been resolved?' 
-            : 'Would you like to escalate this to our support team?'}
-        </p>
-        <div className="flex justify-end gap-4">
-          <button 
-            className="btn btn-ghost"
-            onClick={() => {
-              onConfirm(false);
-              onClose();
-            }}
-          >
-            {resolution.status === 'potential_resolution' ? 'No, Continue' : 'No, Continue with AI'}
-          </button>
-          <button 
-            className="btn btn-primary"
-            onClick={() => {
-              onConfirm(true);
-              onClose();
-            }}
-          >
-            {resolution.status === 'potential_resolution' ? 'Yes, Resolved' : 'Yes, Escalate'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function CustomerView() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -109,8 +62,6 @@ export default function CustomerView() {
   const [newMessage, setNewMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'resolved'>('active');
   const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
-  const [showResolutionConfirm, setShowResolutionConfirm] = useState(false);
-  const [currentResolution, setCurrentResolution] = useState<Message['resolution']>();
 
   // Add subscription cleanup ref
   const messageSubscription = useRef<any>(null);
@@ -270,12 +221,6 @@ export default function CustomerView() {
               );
               if (aiResponse?.resolution) {
                 newMessage.resolution = aiResponse.resolution;
-                // Show resolution dialog if needed
-                if (newMessage.resolution.status === 'potential_resolution' || 
-                    newMessage.resolution.status === 'escalate') {
-                  setCurrentResolution(newMessage.resolution);
-                  setShowResolutionConfirm(true);
-                }
               }
             }
             
@@ -504,42 +449,63 @@ export default function CustomerView() {
 
       // Update ticket status based on AI resolution
       if (aiResponse.resolution) {
-        if (aiResponse.resolution.status === 'potential_resolution' && aiResponse.resolution.confidence > 0.8) {
-          await supabase
-            .from('tickets')
-            .update({ 
-              status: 'Pending Resolution',
-              last_ai_confidence: aiResponse.resolution.confidence,
-              last_ai_reason: aiResponse.resolution.reason
-            })
-            .eq('id', ticketId);
-        } else if (aiResponse.resolution.status === 'escalate' && aiResponse.resolution.confidence > 0.8) {
-          await supabase
-            .from('tickets')
-            .update({ 
-              status: 'Needs Attention',
-              needs_human_attention: true,
-              last_ai_confidence: aiResponse.resolution.confidence,
-              last_ai_reason: aiResponse.resolution.reason
-            })
-            .eq('id', ticketId);
-        }
+        console.log('Processing AI resolution:', aiResponse.resolution);
         
-        // Store resolution in memory for the new message
-        setMessages(prevMessages => {
-          const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
-          const lastMessage = withoutLoading[withoutLoading.length - 1];
-          if (lastMessage && lastMessage.sender_id === AI_ASSISTANT_ID) {
-            lastMessage.resolution = aiResponse.resolution;
-            if (aiResponse.resolution.status === 'potential_resolution' || 
-                aiResponse.resolution.status === 'escalate') {
-              setCurrentResolution(aiResponse.resolution);
-              setShowResolutionConfirm(true);
-            }
+        if (aiResponse.resolution.status === 'potential_resolution' && aiResponse.resolution.confidence > 0.8) {
+          console.log('Attempting to update ticket status to Resolved');
+          
+          const { data: updateData, error: updateError } = await supabase
+            .from('tickets')
+            .update({ status: 'Resolved' })
+            .eq('id', ticketId)
+            .select()
+            .single();
+
+          if (updateError) {
+            console.error('Error updating ticket status:', updateError);
+            toast.error('Failed to update ticket status');
+            throw updateError;
           }
-          return withoutLoading;
-        });
+
+          console.log('Ticket updated successfully:', updateData);
+          toast.success('Your ticket has been resolved');
+          
+          // Refresh tickets list
+          const { data: refreshData, error: refreshError } = await supabase
+            .from('tickets')
+            .select('*')
+            .eq('submitted_by', user.id)
+            .order('created_at', { ascending: false });
+
+          if (refreshError) {
+            console.error('Error refreshing tickets:', refreshError);
+            throw refreshError;
+          }
+            
+          setUserTickets(refreshData || []);
+        } else if (aiResponse.resolution.status === 'escalate' && aiResponse.resolution.confidence > 0.8) {
+          const { error: updateError } = await supabase
+            .from('tickets')
+            .update({ status: 'In Progress' })
+            .eq('id', ticketId);
+
+          if (updateError) {
+            console.error('Error updating ticket status:', updateError);
+            toast.error('Failed to update ticket status');
+            throw updateError;
+          }
+        }
       }
+
+      // Store resolution in memory for the new message
+      setMessages(prevMessages => {
+        const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
+        const lastMessage = withoutLoading[withoutLoading.length - 1];
+        if (lastMessage && lastMessage.sender_id === AI_ASSISTANT_ID) {
+          lastMessage.resolution = aiResponse.resolution;
+        }
+        return withoutLoading;
+      });
 
       // Remove the loading message - the subscription will handle adding the new AI message
       setMessages(prevMessages => prevMessages.filter(msg => msg.id !== 'temp-loading'));
@@ -578,61 +544,6 @@ export default function CustomerView() {
           messagesSection.scrollIntoView({ behavior: 'smooth' });
         }
       }, 100);
-    }
-  };
-
-  // Add resolution handling function
-  const handleResolutionResponse = async (isResolved: boolean) => {
-    if (!selectedTicketId || !supabase || !user) return;
-
-    try {
-      if (currentResolution?.status === 'potential_resolution') {
-        if (isResolved) {
-          // Update ticket status to resolved
-          const { error } = await supabase
-            .from('tickets')
-            .update({ status: 'Resolved' })
-            .eq('id', selectedTicketId);
-
-          if (error) throw error;
-          toast.success('Ticket marked as resolved');
-          
-          // Refresh tickets list
-          const { data } = await supabase
-            .from('tickets')
-            .select('*')
-            .eq('submitted_by', user.id)
-            .order('created_at', { ascending: false });
-            
-          setUserTickets(data || []);
-        }
-      } else if (currentResolution?.status === 'escalate') {
-        if (isResolved) {
-          // Update ticket status to in progress for escalation
-          const { error } = await supabase
-            .from('tickets')
-            .update({ 
-              status: 'In Progress',
-              needs_human_attention: true
-            })
-            .eq('id', selectedTicketId);
-
-          if (error) throw error;
-          toast.success('Ticket escalated to support team');
-          
-          // Refresh tickets list
-          const { data } = await supabase
-            .from('tickets')
-            .select('*')
-            .eq('submitted_by', user.id)
-            .order('created_at', { ascending: false });
-            
-          setUserTickets(data || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error updating ticket status:', error);
-      toast.error('Failed to update ticket status');
     }
   };
 
@@ -884,13 +795,6 @@ export default function CustomerView() {
           </div>
         </div>
       </main>
-
-      <ResolutionConfirmDialog
-        isOpen={showResolutionConfirm}
-        onClose={() => setShowResolutionConfirm(false)}
-        onConfirm={handleResolutionResponse}
-        resolution={currentResolution}
-      />
     </div>
   );
 } 

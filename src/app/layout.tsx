@@ -22,7 +22,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <SupabaseProvider>
           <ClientLayout>{children}</ClientLayout>
-          <Toaster />
+          <Toaster richColors duration={3000} />
         </SupabaseProvider>
       </body>
     </html>

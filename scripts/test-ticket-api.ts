@@ -46,16 +46,9 @@ async function testTicketCreation() {
     // Step 2: Test Similar Articles
     console.log('\n2. Testing Similar Articles Search...');
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-      
       const articles = await findSimilarArticles(
-        supabase,
         `${testData.title}\n${testData.description}`,
-        3,
-        0.7
+        3
       );
       console.log('Similar Articles Found:', articles.length);
     } catch (error) {
