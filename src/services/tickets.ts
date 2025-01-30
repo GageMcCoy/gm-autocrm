@@ -1,13 +1,19 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { analyzePriority } from '@/app/actions/ai';
-import { createMessage, createAIResponse } from '@/services/messages';
+import { analyzePriority, generateAIResponse } from '@/app/actions/ai';
+import { createMessage, AI_ASSISTANT_ID } from '@/services/messages';
+import { findSimilarArticles } from '@/services/knowledge-base';
 
 interface CreateTicketParams {
   title: string;
   description: string;
   submittedBy: string;
-  customerId: string;
-  customerEmail: string;
+}
+
+interface KnowledgeArticle {
+  article: {
+    title: string;
+    content: string;
+  };
 }
 
 export async function createTicket(
@@ -18,7 +24,7 @@ export async function createTicket(
     // Get priority analysis from server action
     const priorityAnalysis = await analyzePriority(params.title, params.description);
 
-    // Create the ticket
+    // Create the ticket with only the fields that exist in our schema
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
       .insert([
@@ -43,16 +49,55 @@ export async function createTicket(
       content: params.description
     });
 
-    // Generate and create AI response asynchronously
-    // We don't await this since we'll handle the response in the UI
-    createAIResponse(
-      supabase,
-      ticket.id,
+    // Find similar articles from knowledge base
+    const similarArticles = await findSimilarArticles(params.description);
+    console.log('Found similar articles:', similarArticles.length);
+
+    // Transform articles to only include relevant fields
+    const relevantArticles = similarArticles.map((suggestion: KnowledgeArticle) => ({
+      title: suggestion.article.title,
+      content: suggestion.article.content
+    }));
+
+    // Generate AI response using server action
+    const response = await generateAIResponse(
       params.title,
-      params.description
-    ).catch(error => {
-      console.error('Error generating AI response:', error);
+      params.description,
+      JSON.stringify(relevantArticles)
+    );
+
+    // Create AI response message
+    await createMessage(supabase, {
+      ticketId: ticket.id,
+      senderId: AI_ASSISTANT_ID,
+      senderName: 'AI Assistant',
+      content: response.message,
+      resolution: response.resolution
     });
+
+    // Update ticket status based on AI resolution
+    if (response.resolution) {
+      if (response.resolution.status === 'potential_resolution' && response.resolution.confidence > 0.8) {
+        await supabase
+          .from('tickets')
+          .update({ 
+            status: 'In Progress',
+            last_ai_confidence: response.resolution.confidence,
+            last_ai_reason: response.resolution.reason
+          })
+          .eq('id', ticket.id);
+      } else if (response.resolution.status === 'escalate' && response.resolution.confidence > 0.8) {
+        await supabase
+          .from('tickets')
+          .update({ 
+            status: 'In Progress',
+            needs_human_attention: true,
+            last_ai_confidence: response.resolution.confidence,
+            last_ai_reason: response.resolution.reason
+          })
+          .eq('id', ticket.id);
+      }
+    }
 
     return ticket;
   } catch (error) {

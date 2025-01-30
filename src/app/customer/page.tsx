@@ -6,8 +6,9 @@ import { useSupabase } from '@/providers/SupabaseProvider';
 import { toast } from 'sonner';
 import { analyzePriority } from '@/utils/openai';
 import { createTicket } from '@/services/tickets';
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { RealtimePostgresChangesPayload, RealtimeChannel } from '@supabase/supabase-js';
 import { AI_ASSISTANT_ID } from '@/services/messages';
+import { findSimilarArticles } from '@/services/knowledge-base';
 
 // Add Message interface
 interface Message {
@@ -17,6 +18,11 @@ interface Message {
   sender_name: string;
   content: string;
   created_at: string;
+  resolution?: {
+    status: 'continue' | 'potential_resolution' | 'escalate';
+    confidence: number;
+    reason: string;
+  };
 }
 
 // Add Message type for payload
@@ -26,6 +32,68 @@ interface MessagePayload {
   sender_id: string;
   content: string;
   created_at: string;
+}
+
+interface RealtimePayload {
+  new: MessagePayload;
+  old: MessagePayload;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  schema: string;
+  table: string;
+  commit_timestamp: string;
+}
+
+type DatabaseChanges = RealtimePostgresChangesPayload<{
+  [key: string]: any;
+  new: MessagePayload;
+  old: MessagePayload;
+}>;
+
+function ResolutionConfirmDialog({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  resolution 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onConfirm: (isResolved: boolean) => void;
+  resolution?: Message['resolution'];
+}) {
+  if (!isOpen || !resolution) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-base-100 p-6 rounded-lg shadow-xl max-w-md w-full">
+        <h3 className="text-lg font-bold mb-4">Issue Resolution</h3>
+        <p className="mb-4">
+          {resolution.status === 'potential_resolution' 
+            ? 'Has your issue been resolved?' 
+            : 'Would you like to escalate this to our support team?'}
+        </p>
+        <div className="flex justify-end gap-4">
+          <button 
+            className="btn btn-ghost"
+            onClick={() => {
+              onConfirm(false);
+              onClose();
+            }}
+          >
+            {resolution.status === 'potential_resolution' ? 'No, Continue' : 'No, Continue with AI'}
+          </button>
+          <button 
+            className="btn btn-primary"
+            onClick={() => {
+              onConfirm(true);
+              onClose();
+            }}
+          >
+            {resolution.status === 'potential_resolution' ? 'Yes, Resolved' : 'Yes, Escalate'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function CustomerView() {
@@ -40,6 +108,9 @@ export default function CustomerView() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'resolved'>('active');
+  const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
+  const [showResolutionConfirm, setShowResolutionConfirm] = useState(false);
+  const [currentResolution, setCurrentResolution] = useState<Message['resolution']>();
 
   // Add subscription cleanup ref
   const messageSubscription = useRef<any>(null);
@@ -81,24 +152,27 @@ export default function CustomerView() {
 
       // Add loading message if this is a new ticket and no AI response yet
       const hasAIMessage = transformedData.some((msg: { sender_id: string }) => msg.sender_id === AI_ASSISTANT_ID);
-      const isNewTicket = transformedData.length > 0 && 
-        (Date.now() - new Date(transformedData[0].created_at).getTime() < 60000); // Within last minute
+      const isNewTicket = transformedData.length === 1 && transformedData[0].sender_id !== AI_ASSISTANT_ID;
 
-      if (!hasAIMessage && isNewTicket) {
+      if (isNewTicket && !hasAIMessage) {
+        setIsGeneratingResponse(true);
         transformedData.push({
           id: 'temp-loading',
           ticket_id: ticketId,
           sender_id: AI_ASSISTANT_ID,
           sender_name: 'AI Assistant',
-          content: 'Analyzing your ticket and preparing a response...',
-          created_at: new Date().toISOString()
+          content: 'Generating response...',
+          created_at: new Date(Date.now() + 1000).toISOString()
         });
+      } else {
+        setIsGeneratingResponse(false);
       }
 
       setMessages(transformedData);
     } catch (err) {
       console.error('Error loading messages:', err);
       setMessages([]);
+      setIsGeneratingResponse(false);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -163,7 +237,7 @@ export default function CustomerView() {
           table: 'messages',
           filter: `ticket_id=eq.${selectedTicketId}`,
         },
-        async (payload) => {
+        (payload: any) => {
           console.log('Received new message payload:', {
             id: payload.new.id,
             sender_id: payload.new.sender_id,
@@ -177,33 +251,40 @@ export default function CustomerView() {
             console.log('Previous messages:', prevMessages);
             
             // If this is an AI message, remove the loading message
-            if (payload.new.sender_id === AI_ASSISTANT_ID) {
-              const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
-              return [
-                ...withoutLoading,
-                {
-                  id: payload.new.id,
-                  ticket_id: payload.new.ticket_id,
-                  sender_id: payload.new.sender_id,
-                  sender_name: 'AI Assistant',
-                  content: payload.new.content,
-                  created_at: payload.new.created_at
+            const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
+            const newMessage: Message = {
+              id: payload.new.id,
+              ticket_id: payload.new.ticket_id,
+              sender_id: payload.new.sender_id,
+              sender_name: payload.new.sender_id === AI_ASSISTANT_ID ? 'AI Assistant' : 'Unknown User',
+              content: payload.new.content,
+              created_at: payload.new.created_at
+            };
+
+            // Add resolution status for AI messages if available in memory
+            if (newMessage.sender_id === AI_ASSISTANT_ID) {
+              // Find the corresponding AI response in memory
+              const aiResponse = prevMessages.find(msg => 
+                msg.sender_id === AI_ASSISTANT_ID && 
+                msg.content === newMessage.content
+              );
+              if (aiResponse?.resolution) {
+                newMessage.resolution = aiResponse.resolution;
+                // Show resolution dialog if needed
+                if (newMessage.resolution.status === 'potential_resolution' || 
+                    newMessage.resolution.status === 'escalate') {
+                  setCurrentResolution(newMessage.resolution);
+                  setShowResolutionConfirm(true);
                 }
-              ];
+              }
             }
             
-            // For non-AI messages, just append
-            return [
-              ...prevMessages,
-              {
-                id: payload.new.id,
-                ticket_id: payload.new.ticket_id,
-                sender_id: payload.new.sender_id,
-                sender_name: payload.new.sender_id === AI_ASSISTANT_ID ? 'AI Assistant' : 'Unknown User',
-                content: payload.new.content,
-                created_at: payload.new.created_at
-              }
-            ];
+            const newMessages = [...withoutLoading, newMessage];
+            
+            // Sort messages by creation time
+            return newMessages.sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
           });
         }
       )
@@ -245,65 +326,34 @@ export default function CustomerView() {
     });
 
     try {
-      // Create actual ticket first
+      // Create actual ticket first with only the fields we have in our schema
       const ticket = await createTicket(supabase, {
         title: submittedTitle,
         description: submittedDescription,
-        submittedBy: user.id,
-        customerId: user.id,
-        customerEmail: user.email || ''
+        submittedBy: user.id
       });
 
-      // Add ticket to the list
+      // Add ticket to the list and select it
       setUserTickets(prev => [ticket, ...prev]);
-      
-      // Set selected ticket ID to trigger subscription
       setSelectedTicketId(ticket.id);
-      setActiveTab('active');
 
-      // Initialize messages with the user's message and loading state
-      setMessages([
-        {
-          id: 'initial-message',
-          ticket_id: ticket.id,
-          sender_id: user.id,
-          sender_name: user.user_metadata?.name || user.email || 'You',
-          content: submittedDescription,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'temp-loading',
-          ticket_id: ticket.id,
-          sender_id: AI_ASSISTANT_ID,
-          sender_name: 'AI Assistant',
-          content: 'Analyzing your ticket and preparing a response...',
-          created_at: new Date().toISOString()
-        }
-      ]);
-      
-      // Dismiss loading toast and show success
-      toast.dismiss(loadingToast);
-      toast.success('Ticket submitted successfully!', {
-        action: {
-          label: 'View Ticket',
-          onClick: () => {
-            const ticketElement = document.getElementById(`ticket-${ticket.id}`);
-            if (ticketElement) {
-              ticketElement.scrollIntoView({ behavior: 'smooth' });
-            }
-          }
-        },
-        duration: 5000
+      // Show success message
+      toast.success('Ticket created successfully!', {
+        id: loadingToast
       });
 
+      // Load messages for the new ticket
+      await loadMessages(ticket.id);
     } catch (err) {
       console.error('Error creating ticket:', err);
-      // Restore form values on error
-      setTitle(submittedTitle);
-      setDescription(submittedDescription);
-      setError('Failed to create ticket. Please try again.');
-      toast.dismiss(loadingToast);
-      toast.error('Failed to create ticket');
+      toast.error('Failed to create ticket', {
+        id: loadingToast
+      });
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -339,27 +389,168 @@ export default function CustomerView() {
     }
   }
 
-  // Modify handleSendMessage to remove loadMessages call
+  // Modify handleSendMessage to include knowledge base context
   const handleSendMessage = async (e: React.FormEvent, ticketId: string) => {
     e.preventDefault();
     if (!supabase || !newMessage.trim() || !user) return;
 
+    const currentTime = new Date().toISOString();
+    const userMessageContent = newMessage.trim();
+
     try {
+      // Send user message
       const { error: insertError } = await supabase
         .from('messages')
         .insert({
           ticket_id: ticketId,
           sender_id: user.id,
-          content: newMessage.trim()
+          sender_name: user.user_metadata?.name || user.email || 'Unknown User',
+          content: userMessageContent,
+          created_at: currentTime
         });
 
       if (insertError) throw insertError;
 
+      // Clear input
       setNewMessage('');
-      // Remove the loadMessages call since we have realtime subscription
+
+      // Add temporary loading message with a timestamp after the user message
+      const loadingTime = new Date(Date.now() + 100).toISOString();
+      setIsGeneratingResponse(true);
+      setMessages(prevMessages => {
+        // Remove any existing loading messages
+        const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
+        // Add the new loading message
+        return [
+          ...withoutLoading,
+          {
+            id: 'temp-loading',
+            ticket_id: ticketId,
+            sender_id: AI_ASSISTANT_ID,
+            sender_name: 'AI Assistant',
+            content: 'Generating response...',
+            created_at: loadingTime
+          }
+        ];
+      });
+
+      // Format conversation history - only include messages up to the current one
+      const formattedHistory = messages.map(msg => ({
+        role: msg.sender_id === AI_ASSISTANT_ID ? 'assistant' as const : 'user' as const,
+        content: msg.content
+      }));
+
+      // Add the current message to the history
+      formattedHistory.push({
+        role: 'user',
+        content: userMessageContent
+      });
+
+      // Get the ticket details
+      const { data: ticketData } = await supabase
+        .from('tickets')
+        .select('title, status')
+        .eq('id', ticketId)
+        .single();
+
+      if (!ticketData) throw new Error('Ticket not found');
+
+      // Find similar articles from knowledge base
+      const similarArticles = await findSimilarArticles(userMessageContent);
+      console.log('Found similar articles:', similarArticles.length);
+
+      // Transform articles to only include relevant fields
+      const relevantArticles = similarArticles.map(suggestion => ({
+        title: suggestion.article.title,
+        content: suggestion.article.content
+      }));
+
+      // Generate and send AI response
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          operation: 'generateFollowUpResponse',
+          ticketId: ticketId,
+          title: ticketData.title,
+          userMessage: userMessageContent,
+          conversationHistory: formattedHistory,
+          ticketStatus: ticketData.status,
+          similarArticles: relevantArticles
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate AI response');
+      }
+
+      const aiResponse = await response.json();
+
+      // Remove loading message and add AI response
+      const aiResponseTime = new Date(Date.now() + 2000).toISOString();
+      const { error: aiError } = await supabase
+        .from('messages')
+        .insert({
+          ticket_id: ticketId,
+          sender_id: AI_ASSISTANT_ID,
+          sender_name: 'AI Assistant',
+          content: aiResponse.message,
+          created_at: aiResponseTime
+        });
+
+      if (aiError) throw aiError;
+
+      // Update ticket status based on AI resolution
+      if (aiResponse.resolution) {
+        if (aiResponse.resolution.status === 'potential_resolution' && aiResponse.resolution.confidence > 0.8) {
+          await supabase
+            .from('tickets')
+            .update({ 
+              status: 'Pending Resolution',
+              last_ai_confidence: aiResponse.resolution.confidence,
+              last_ai_reason: aiResponse.resolution.reason
+            })
+            .eq('id', ticketId);
+        } else if (aiResponse.resolution.status === 'escalate' && aiResponse.resolution.confidence > 0.8) {
+          await supabase
+            .from('tickets')
+            .update({ 
+              status: 'Needs Attention',
+              needs_human_attention: true,
+              last_ai_confidence: aiResponse.resolution.confidence,
+              last_ai_reason: aiResponse.resolution.reason
+            })
+            .eq('id', ticketId);
+        }
+        
+        // Store resolution in memory for the new message
+        setMessages(prevMessages => {
+          const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
+          const lastMessage = withoutLoading[withoutLoading.length - 1];
+          if (lastMessage && lastMessage.sender_id === AI_ASSISTANT_ID) {
+            lastMessage.resolution = aiResponse.resolution;
+            if (aiResponse.resolution.status === 'potential_resolution' || 
+                aiResponse.resolution.status === 'escalate') {
+              setCurrentResolution(aiResponse.resolution);
+              setShowResolutionConfirm(true);
+            }
+          }
+          return withoutLoading;
+        });
+      }
+
+      // Remove the loading message - the subscription will handle adding the new AI message
+      setMessages(prevMessages => prevMessages.filter(msg => msg.id !== 'temp-loading'));
+
     } catch (err) {
       console.error('Error sending message:', err);
       setError('Failed to send message');
+      // Remove loading message on error
+      setMessages(prevMessages => prevMessages.filter(msg => msg.id !== 'temp-loading'));
+    } finally {
+      setIsGeneratingResponse(false);
     }
   };
 
@@ -387,6 +578,61 @@ export default function CustomerView() {
           messagesSection.scrollIntoView({ behavior: 'smooth' });
         }
       }, 100);
+    }
+  };
+
+  // Add resolution handling function
+  const handleResolutionResponse = async (isResolved: boolean) => {
+    if (!selectedTicketId || !supabase || !user) return;
+
+    try {
+      if (currentResolution?.status === 'potential_resolution') {
+        if (isResolved) {
+          // Update ticket status to resolved
+          const { error } = await supabase
+            .from('tickets')
+            .update({ status: 'Resolved' })
+            .eq('id', selectedTicketId);
+
+          if (error) throw error;
+          toast.success('Ticket marked as resolved');
+          
+          // Refresh tickets list
+          const { data } = await supabase
+            .from('tickets')
+            .select('*')
+            .eq('submitted_by', user.id)
+            .order('created_at', { ascending: false });
+            
+          setUserTickets(data || []);
+        }
+      } else if (currentResolution?.status === 'escalate') {
+        if (isResolved) {
+          // Update ticket status to in progress for escalation
+          const { error } = await supabase
+            .from('tickets')
+            .update({ 
+              status: 'In Progress',
+              needs_human_attention: true
+            })
+            .eq('id', selectedTicketId);
+
+          if (error) throw error;
+          toast.success('Ticket escalated to support team');
+          
+          // Refresh tickets list
+          const { data } = await supabase
+            .from('tickets')
+            .select('*')
+            .eq('submitted_by', user.id)
+            .order('created_at', { ascending: false });
+            
+          setUserTickets(data || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating ticket status:', error);
+      toast.error('Failed to update ticket status');
     }
   };
 
@@ -573,11 +819,15 @@ export default function CustomerView() {
                                       }`}
                                     >
                                       <div className={`bg-gray-700 rounded-lg p-3 max-w-[85%] ${
-                                        message.sender_id === user?.id ? 'bg-primary/10' : ''
+                                        message.sender_id === user?.id ? 'bg-primary/10' : 
+                                        message.sender_id === AI_ASSISTANT_ID ? 'bg-blue-500/10' :
+                                        'bg-gray-600/50'
                                       }`}>
                                         <div className="flex justify-between items-start mb-1 gap-4">
                                           <span className={`text-sm font-medium ${
-                                            message.sender_id === user?.id ? 'text-primary' : 'text-blue-300'
+                                            message.sender_id === user?.id ? 'text-primary' : 
+                                            message.sender_id === AI_ASSISTANT_ID ? 'text-blue-400' :
+                                            'text-gray-300'
                                           }`}>
                                             {message.sender_name}
                                           </span>
@@ -587,10 +837,10 @@ export default function CustomerView() {
                                         </div>
                                         <p className="text-white whitespace-pre-wrap break-words">
                                           {message.id === 'temp-loading' ? (
-                                            <span className="flex items-center gap-2">
-                                              Generating response...
+                                            <div className="flex items-center gap-2">
                                               <span className="loading loading-dots loading-sm"></span>
-                                            </span>
+                                              <span>AI is typing...</span>
+                                            </div>
                                           ) : (
                                             message.content
                                           )}
@@ -634,6 +884,13 @@ export default function CustomerView() {
           </div>
         </div>
       </main>
+
+      <ResolutionConfirmDialog
+        isOpen={showResolutionConfirm}
+        onClose={() => setShowResolutionConfirm(false)}
+        onConfirm={handleResolutionResponse}
+        resolution={currentResolution}
+      />
     </div>
   );
 } 

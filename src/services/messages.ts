@@ -10,6 +10,11 @@ interface CreateMessageParams {
   senderId: string;
   senderName?: string;  // Make senderName optional
   content: string;
+  resolution?: {
+    status: string;
+    confidence: number;
+    reason: string;
+  };
 }
 
 export async function createMessage(
@@ -40,20 +45,49 @@ export async function createMessage(
       senderName = 'Unknown User';
     }
 
-    // Create the message
+    // Create the message without resolution field
     const { data, error } = await supabase
       .from('messages')
       .insert([{
         ticket_id: params.ticketId,
         sender_id: params.senderId,
         sender_name: senderName,
-        content: params.content,
+        content: params.content
       }])
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+
+    // If there's a resolution status, update the ticket directly
+    if (params.resolution && params.senderId === AI_ASSISTANT_ID) {
+      if (params.resolution.status === 'potential_resolution' && params.resolution.confidence > 0.8) {
+        await supabase
+          .from('tickets')
+          .update({ 
+            status: 'Pending Resolution',
+            last_ai_confidence: params.resolution.confidence,
+            last_ai_reason: params.resolution.reason
+          })
+          .eq('id', params.ticketId);
+      } else if (params.resolution.status === 'escalate' && params.resolution.confidence > 0.8) {
+        await supabase
+          .from('tickets')
+          .update({ 
+            status: 'Needs Attention',
+            needs_human_attention: true,
+            last_ai_confidence: params.resolution.confidence,
+            last_ai_reason: params.resolution.reason
+          })
+          .eq('id', params.ticketId);
+      }
+    }
+
+    // Return the message with resolution for client-side use only
+    return {
+      ...data,
+      resolution: params.resolution
+    };
   } catch (error) {
     console.error('Error in createMessage:', error);
     throw error;
@@ -84,12 +118,13 @@ export async function createAIResponse(
       JSON.stringify(relevantArticles)
     );
 
-    // Create the message with the complete content
+    // Create the message without resolution field
     const message = await createMessage(supabase, {
       ticketId,
       senderId: AI_ASSISTANT_ID,
       senderName: 'AI Assistant',
-      content: response.message
+      content: response.message,
+      resolution: response.resolution
     });
 
     return {
@@ -108,6 +143,11 @@ export async function createAIResponse(
         senderId: AI_ASSISTANT_ID,
         senderName: 'AI Assistant',
         content: 'I apologize, but I encountered an error while generating a response. A support agent will review your ticket as soon as possible.',
+        resolution: {
+          status: 'escalate',
+          confidence: 1.0,
+          reason: 'Error in AI processing'
+        }
       });
 
       return {

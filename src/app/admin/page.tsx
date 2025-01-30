@@ -40,6 +40,15 @@ interface KnowledgeBaseArticle {
   status: 'published' | 'draft' | 'archived';
 }
 
+interface Message {
+  id: string;
+  ticket_id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  created_at: string;
+}
+
 // Stats component to handle data fetching
 function StatsGrid() {
   const supabase = createClientComponentClient();
@@ -285,6 +294,11 @@ function TicketsTab() {
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [newMessage, setNewMessage] = useState('');
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -362,6 +376,103 @@ function TicketsTab() {
       default:
         return 'bg-gray-500/10 text-gray-500 ring-1 ring-gray-500/20';
     }
+  };
+
+  const loadMessages = async (ticketId: string) => {
+    if (!supabase) return;
+
+    try {
+      setIsLoadingMessages(true);
+      
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) throw messagesError;
+      setMessages(messagesData || []);
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      setMessages([]);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabase || !selectedTicket || !newMessage.trim()) return;
+
+    try {
+      // Send user message
+      const { error: insertError } = await supabase
+        .from('messages')
+        .insert({
+          ticket_id: selectedTicket.id,
+          sender_id: (await supabase.auth.getUser()).data.user?.id,
+          content: newMessage.trim()
+        });
+
+      if (insertError) throw insertError;
+
+      // Clear input and refresh messages
+      setNewMessage('');
+      await loadMessages(selectedTicket.id);
+
+      // Format conversation history
+      const formattedHistory = messages.map(msg => ({
+        role: msg.sender_id === 'AI_ASSISTANT' ? 'assistant' as const : 'user' as const,
+        content: msg.content
+      }));
+
+      // Generate and send AI response
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          operation: 'generateFollowUpResponse',
+          ticketId: selectedTicket.id,
+          title: selectedTicket.title,
+          userMessage: newMessage.trim(),
+          conversationHistory: formattedHistory,
+          ticketStatus: selectedTicket.status,
+          similarArticles: [] // You can add relevant KB articles here
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate AI response');
+      }
+
+      const aiResponse = await response.json();
+
+      // Save AI response to messages
+      const { error: aiError } = await supabase
+        .from('messages')
+        .insert({
+          ticket_id: selectedTicket.id,
+          sender_id: 'AI_ASSISTANT',
+          sender_name: 'AI Assistant',
+          content: aiResponse.message
+        });
+
+      if (aiError) throw aiError;
+
+      // Refresh messages to show AI response
+      await loadMessages(selectedTicket.id);
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setError('Failed to send message');
+    }
+  };
+
+  const handleView = (ticket: Ticket) => {
+    setSelectedTicket(ticket);
+    loadMessages(ticket.id);
+    setIsViewModalOpen(true);
   };
 
   if (error) {
@@ -454,7 +565,12 @@ function TicketsTab() {
                       {new Date(ticket.created_at).toLocaleDateString()}
                     </td>
                     <td>
-                      <button className="text-gray-400 hover:text-gray-200">View</button>
+                      <button 
+                        className="text-gray-400 hover:text-gray-200"
+                        onClick={() => handleView(ticket)}
+                      >
+                        View
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -463,6 +579,88 @@ function TicketsTab() {
           )}
         </div>
       </div>
+
+      {/* View Modal with Chat */}
+      {isViewModalOpen && selectedTicket && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-4xl space-y-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-200">{selectedTicket.title}</h3>
+                <p className="text-gray-400 mt-1">{selectedTicket.description}</p>
+              </div>
+              <button 
+                className="btn btn-sm btn-ghost"
+                onClick={() => setIsViewModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Messages Section */}
+            <div className="bg-gray-900/50 rounded-lg p-4">
+              <div className="h-96 overflow-y-auto space-y-4 mb-4">
+                {isLoadingMessages ? (
+                  <div className="flex justify-center items-center h-full">
+                    <span className="loading loading-spinner loading-lg"></span>
+                  </div>
+                ) : messages.length > 0 ? (
+                  messages.map((message) => (
+                    <div 
+                      key={message.id} 
+                      className={`flex ${message.sender_id === 'AI_ASSISTANT' ? 'justify-start' : 'justify-end'}`}
+                    >
+                      <div className={`max-w-[80%] ${
+                        message.sender_id === 'AI_ASSISTANT' 
+                          ? 'bg-gray-700/50' 
+                          : 'bg-indigo-500/10'
+                      } rounded-lg p-4`}>
+                        <div className="flex justify-between items-start gap-4 mb-1">
+                          <span className={`text-sm font-medium ${
+                            message.sender_id === 'AI_ASSISTANT'
+                              ? 'text-blue-400'
+                              : 'text-indigo-400'
+                          }`}>
+                            {message.sender_name || 'Unknown'}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {new Date(message.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-gray-200 whitespace-pre-wrap">
+                          {message.content}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-gray-400 text-center py-8">
+                    No messages yet
+                  </div>
+                )}
+              </div>
+
+              {/* Message Input */}
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Type your message..."
+                  className="input input-bordered flex-1 bg-gray-700 text-white"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={!newMessage.trim()}
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

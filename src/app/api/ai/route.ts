@@ -1,7 +1,7 @@
 'use server';
 
 import { NextResponse } from 'next/server';
-import { generateAIResponse, analyzePriority } from '@/app/actions/ai';
+import { generateAIResponse, generateFollowUpResponse, analyzePriority } from '@/app/actions/ai';
 
 export async function POST(request: Request) {
   // Log environment variables in the server context
@@ -14,7 +14,16 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { operation, title, description, similarArticles } = body;
+    const { 
+      operation, 
+      title, 
+      description, 
+      similarArticles,
+      ticketId,
+      userMessage,
+      conversationHistory,
+      ticketStatus 
+    } = body;
 
     // Log the incoming request
     console.log('AI API Request:', {
@@ -32,6 +41,18 @@ export async function POST(request: Request) {
 
       case 'generateInitialResponse': {
         const response = await generateAIResponse(title, description, similarArticles);
+        return NextResponse.json(response);
+      }
+
+      case 'generateFollowUpResponse': {
+        const response = await generateFollowUpResponse(
+          ticketId,
+          title,
+          userMessage,
+          conversationHistory,
+          ticketStatus,
+          JSON.stringify(similarArticles)
+        );
         return NextResponse.json(response);
       }
 
