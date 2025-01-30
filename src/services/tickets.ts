@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { analyzePriority } from '@/utils/openai';
+import { analyzePriority } from '@/app/actions/ai';
 import { createMessage, createAIResponse } from '@/services/messages';
 
 interface CreateTicketParams {
@@ -15,7 +15,7 @@ export async function createTicket(
   params: CreateTicketParams
 ) {
   try {
-    // Get priority analysis from AI
+    // Get priority analysis from server action
     const priorityAnalysis = await analyzePriority(params.title, params.description);
 
     // Create the ticket

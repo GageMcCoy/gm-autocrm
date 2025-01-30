@@ -2,13 +2,16 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createTicket } from '@/services/tickets';
+import { useSupabase } from '@/providers/SupabaseProvider';
 import { toast } from 'sonner';
 
 export default function FormCreateTicket() {
-  const router = useRouter();
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
+  const { supabase } = useSupabase();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,7 +34,7 @@ export default function FormCreateTicket() {
       }
 
       const result = await response.json();
-      
+
       // Show success message with priority info
       toast.success(
         `Ticket created successfully! Priority: ${result.priority.priority}`,

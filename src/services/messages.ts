@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { generateInitialResponse } from '@/utils/openai';
+import { generateAIResponse } from '@/app/actions/ai';
 import { findSimilarArticles } from '@/services/knowledge-base';
 
 // Constant UUID for AI Assistant
@@ -68,34 +68,28 @@ export async function createAIResponse(
 ): Promise<{ id: string; content: string; status: 'complete' | 'error' }> {
   try {
     // Find similar articles from knowledge base
-    const similarArticles = await findSimilarArticles(supabase, description);
+    const similarArticles = await findSimilarArticles(description);
+    console.log('Found similar articles:', similarArticles.length);
 
-    // Generate AI response using similar articles
-    const response = await fetch('/api/ai', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        operation: 'generateInitialResponse',
-        title,
-        description,
-        similarArticles,
-      }),
-    });
+    // Transform articles to only include relevant fields
+    const relevantArticles = similarArticles.map(suggestion => ({
+      title: suggestion.article.title,
+      content: suggestion.article.content
+    }));
 
-    if (!response.ok) {
-      throw new Error('Failed to generate AI response');
-    }
-
-    const { content } = await response.json();
+    // Generate AI response using server action
+    const response = await generateAIResponse(
+      title,
+      description,
+      JSON.stringify(relevantArticles)
+    );
 
     // Create the message with the complete content
     const message = await createMessage(supabase, {
       ticketId,
       senderId: AI_ASSISTANT_ID,
       senderName: 'AI Assistant',
-      content,
+      content: response.message
     });
 
     return {
@@ -106,18 +100,24 @@ export async function createAIResponse(
 
   } catch (error) {
     console.error('Error creating AI response:', error);
+    
     // Create a fallback message if AI fails
-    const fallbackMessage = await createMessage(supabase, {
-      ticketId,
-      senderId: AI_ASSISTANT_ID,
-      senderName: 'AI Assistant',
-      content: 'Thank you for submitting your ticket. Our support team will review it shortly.',
-    });
+    try {
+      const fallbackMessage = await createMessage(supabase, {
+        ticketId,
+        senderId: AI_ASSISTANT_ID,
+        senderName: 'AI Assistant',
+        content: 'I apologize, but I encountered an error while generating a response. A support agent will review your ticket as soon as possible.',
+      });
 
-    return {
-      id: fallbackMessage.id,
-      content: fallbackMessage.content,
-      status: 'error'
-    };
+      return {
+        id: fallbackMessage.id,
+        content: fallbackMessage.content,
+        status: 'error'
+      };
+    } catch (fallbackError) {
+      console.error('Error creating fallback message:', fallbackError);
+      throw error;
+    }
   }
 } 

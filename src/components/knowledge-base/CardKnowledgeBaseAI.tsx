@@ -1,27 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useSupabase } from '@/providers/SupabaseProvider';
-import { updateAllEmbeddings } from '@/services/knowledge-base';
-import { toast } from 'sonner';
 
 export default function CardKnowledgeBaseAI() {
-  const { supabase } = useSupabase();
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  async function handleUpdateEmbeddings() {
-    try {
-      setIsUpdating(true);
-      await updateAllEmbeddings(supabase);
-      toast.success('Successfully updated all article embeddings');
-    } catch (error) {
-      console.error('Error updating embeddings:', error);
-      toast.error('Failed to update article embeddings');
-    } finally {
-      setIsUpdating(false);
-    }
-  }
-
   return (
     <div className="card bg-base-100 shadow-xl">
       <div className="card-body">
@@ -30,22 +11,6 @@ export default function CardKnowledgeBaseAI() {
         <div className="divider"></div>
         
         <div className="space-y-4">
-          <div>
-            <h3 className="text-lg font-semibold mb-2">Vector Database Management</h3>
-            <p className="text-sm text-base-content/70 mb-4">
-              Update vector embeddings for all articles to improve similarity search and article suggestions.
-            </p>
-            <button
-              className={`btn btn-primary ${isUpdating ? 'loading' : ''}`}
-              onClick={handleUpdateEmbeddings}
-              disabled={isUpdating}
-            >
-              {isUpdating ? 'Updating Embeddings...' : 'Update All Embeddings'}
-            </button>
-          </div>
-
-          <div className="divider"></div>
-          
           <div>
             <h3 className="text-lg font-semibold mb-2">AI Features Status</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

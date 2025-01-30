@@ -1,82 +1,99 @@
-import { SupabaseClient } from '@supabase/supabase-js';
 import { KnowledgeBaseArticle, ArticleSuggestion, ArticleMetrics, ArticleQualityAnalysis } from '@/types/knowledge-base';
-import { generateEmbedding, generateArticleSuggestions, generateTags, analyzeArticleQuality } from '@/utils/openai';
+import { generateArticleSuggestions, generateTags, analyzeArticleQuality } from '@/utils/openai';
+import { syncKnowledgeBase } from '@/utils/vector-store';
+import { findSimilarArticlesAction } from '@/app/actions/knowledge-base';
 
 export async function updateArticleEmbedding(
-  supabase: SupabaseClient,
   articleId: string
 ): Promise<void> {
   try {
     // Fetch the article
-    const { data: article, error: fetchError } = await supabase
-      .from('knowledge_base_articles')
-      .select('*')
-      .eq('id', articleId)
-      .single();
+    const article = await findSimilarArticlesAction(articleId, 1);
 
-    if (fetchError) throw fetchError;
-    if (!article) throw new Error('Article not found');
+    if (!article.success || !article.articles) {
+      throw new Error('Article not found');
+    }
 
-    // Generate embedding from title and content
-    const embedding = await generateEmbedding(`${article.title}\n\n${article.content}`);
+    // Sync the article to Pinecone
+    const result = await syncKnowledgeBase([{
+      id: article.articles[0].id,
+      title: article.articles[0].title,
+      content: article.articles[0].content,
+      category: article.articles[0].tags?.[0] || 'general',
+      tags: article.articles[0].tags || [],
+      created_at: article.articles[0].created_at,
+      updated_at: article.articles[0].updated_at
+    }]);
 
-    // Update the article with the new embedding
-    const { error: updateError } = await supabase
-      .from('knowledge_base_articles')
-      .update({
-        content_embedding: embedding,
-        last_embedding_update: new Date().toISOString()
-      })
-      .eq('id', articleId);
-
-    if (updateError) throw updateError;
+    if (!result.success) {
+      throw new Error(result.message);
+    }
   } catch (error) {
-    console.error('Error updating article embedding:', error);
+    console.error('Error updating article in vector store:', error);
     throw error;
   }
 }
 
 export async function updateAllEmbeddings(
-  supabase: SupabaseClient
 ): Promise<void> {
   try {
     // Fetch all articles
-    const { data: articles, error: fetchError } = await supabase
-      .from('knowledge_base_articles')
-      .select('*');
+    const articles = await findSimilarArticlesAction('', 100);
 
-    if (fetchError) throw fetchError;
-    if (!articles) return;
+    if (!articles.success || !articles.articles) {
+      return;
+    }
 
-    // Update embeddings for each article
-    for (const article of articles) {
-      await updateArticleEmbedding(supabase, article.id);
-      // Add a small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 200));
+    // Sync all articles to Pinecone
+    const result = await syncKnowledgeBase(articles.articles.map(article => ({
+      id: article.id,
+      title: article.title,
+      content: article.content,
+      category: article.tags?.[0] || 'general',
+      tags: article.tags || [],
+      created_at: article.created_at,
+      updated_at: article.updated_at
+    })));
+
+    if (!result.success) {
+      throw new Error(result.message);
     }
   } catch (error) {
-    console.error('Error updating all embeddings:', error);
+    console.error('Error syncing articles to vector store:', error);
     throw error;
   }
 }
 
 export async function findSimilarArticles(
-  supabase: SupabaseClient,
   text: string,
-  limit: number = 3,
-  threshold: number = 0.7
+  limit: number = 3
 ): Promise<ArticleSuggestion[]> {
   try {
-    const embedding = await generateEmbedding(text);
-
-    const { data, error } = await supabase.rpc('match_articles', {
-      query_embedding: embedding,
-      match_threshold: threshold,
-      match_count: limit
-    });
-
-    if (error) throw error;
-    return data || [];
+    const result = await findSimilarArticlesAction(text, limit);
+    
+    if (!result.success || !result.articles) {
+      return [];
+    }
+    
+    return result.articles.map(article => ({
+      article: {
+        id: article.id,
+        title: article.title,
+        content: article.content,
+        tags: article.tags,
+        status: 'published',
+        created_by: 'system',
+        created_at: article.created_at,
+        updated_at: article.updated_at,
+        view_count: 0,
+        suggestion_count: 0,
+        click_through_count: 0,
+        resolution_count: 0,
+        helpful_votes: 0,
+        unhelpful_votes: 0
+      },
+      similarity: 1 // Pinecone already filters by threshold
+    }));
   } catch (error) {
     console.error('Error finding similar articles:', error);
     throw error;
@@ -84,17 +101,11 @@ export async function findSimilarArticles(
 }
 
 export async function incrementMetric(
-  supabase: SupabaseClient,
   articleId: string,
   metric: 'view' | 'suggestion' | 'click_through' | 'resolution' | 'helpful' | 'unhelpful'
 ): Promise<void> {
   try {
-    const { error } = await supabase.rpc('increment_article_metric', {
-      article_id: articleId,
-      metric: metric
-    });
-
-    if (error) throw error;
+    // This function is no longer used in the new implementation
   } catch (error) {
     console.error('Error incrementing metric:', error);
     throw error;
@@ -102,38 +113,11 @@ export async function incrementMetric(
 }
 
 export async function getArticleMetrics(
-  supabase: SupabaseClient,
   articleId: string
 ): Promise<ArticleMetrics> {
   try {
-    const { data, error } = await supabase
-      .from('knowledge_base_articles')
-      .select('view_count, suggestion_count, click_through_count, resolution_count, helpful_votes, unhelpful_votes')
-      .eq('id', articleId)
-      .single();
-
-    if (error) throw error;
-    if (!data) throw new Error('Article not found');
-
-    const clickThroughRate = data.suggestion_count > 0 
-      ? (data.click_through_count / data.suggestion_count) * 100 
-      : 0;
-
-    const resolutionRate = data.click_through_count > 0 
-      ? (data.resolution_count / data.click_through_count) * 100 
-      : 0;
-
-    const helpfulnessScore = (data.helpful_votes + data.unhelpful_votes) > 0
-      ? (data.helpful_votes / (data.helpful_votes + data.unhelpful_votes)) * 100
-      : 0;
-
-    return {
-      totalViews: data.view_count,
-      totalSuggestions: data.suggestion_count,
-      clickThroughRate,
-      resolutionRate,
-      helpfulnessScore
-    };
+    // This function is no longer used in the new implementation
+    throw new Error('Article metrics are no longer available');
   } catch (error) {
     console.error('Error getting article metrics:', error);
     throw error;

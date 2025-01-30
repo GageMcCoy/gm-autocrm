@@ -97,23 +97,27 @@ export default function TableKnowledgeBase() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-4">
-        <select 
-          className="select select-bordered bg-gray-700 text-white border-gray-600 min-w-[200px]"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="">All Articles</option>
-          <option value="draft">Drafts</option>
-          <option value="published">Published</option>
-          <option value="archived">Archived</option>
-        </select>
+    <div>
+      <div className="border-b border-gray-700">
+        <div className="px-4 py-3">
+          <select 
+            className="select select-sm h-9 min-h-0 bg-gray-700/50 hover:bg-gray-600/50 text-gray-200 border-gray-600 hover:border-gray-500 focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">All Articles</option>
+            <option value="draft">Drafts</option>
+            <option value="published">Published</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg">
-          <span>{error}</span>
+        <div className="p-4">
+          <div className="bg-red-500/10 border border-red-500 text-red-500 p-4 rounded-lg">
+            <span>{error}</span>
+          </div>
         </div>
       )}
 

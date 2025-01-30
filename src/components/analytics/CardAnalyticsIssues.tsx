@@ -67,10 +67,10 @@ export default function CardAnalyticsIssues() {
 
         const ticketsWithMessages = tickets.map(ticket => ({
           title: ticket.title,
-          description: ticket.description + '\n' + ticket.messages
+          description: ticket.description,
+          messages: ticket.messages
             .filter((m: any) => m.sender_id !== '00000000-0000-0000-0000-000000000000')
             .map((m: any) => m.content)
-            .join('\n')
         }));
 
         const response = await fetch('/api/ai', {

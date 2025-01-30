@@ -7,14 +7,12 @@ export interface KnowledgeBaseArticle {
   created_by: string;
   created_at: string;
   updated_at: string;
-  content_embedding?: number[];
   view_count: number;
   suggestion_count: number;
   click_through_count: number;
   resolution_count: number;
   helpful_votes: number;
   unhelpful_votes: number;
-  last_embedding_update?: string;
 }
 
 export interface ArticleSuggestion {

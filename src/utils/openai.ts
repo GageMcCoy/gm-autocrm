@@ -69,6 +69,39 @@ async function createChatCompletion(
 // Specialized functions using the core completion function
 export async function analyzePriority(title: string, description: string): Promise<PriorityAnalysis> {
   try {
+    // In Node.js environment (CLI/tests), use OpenAI directly
+    if (typeof window === 'undefined') {
+      const openai = getOpenAIClient();
+      const response = await openai.chat.completions.create({
+        model: COMPLETION_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a customer support AI that analyzes support tickets to determine their priority level.
+            Consider factors like:
+            - Business impact
+            - Number of affected users
+            - System functionality
+            - Data security/privacy concerns
+            - Time sensitivity
+            
+            Return a JSON object with two fields:
+            - priority: one of ["Low", "Medium", "High"]
+            - reason: brief explanation of the priority assignment`
+          },
+          {
+            role: 'user',
+            content: `Title: ${title}\n\nDescription: ${description}`
+          }
+        ],
+        temperature: 0.3,
+      });
+
+      const content = response.choices[0].message.content || '{"priority": "Medium", "reason": "Default priority due to analysis error"}';
+      return JSON.parse(content);
+    }
+
+    // In browser environment, use the API route
     const response = await fetch('/api/ai', {
       method: 'POST',
       headers: {
@@ -150,9 +183,67 @@ export async function analyzeArticleQuality(content: string): Promise<string> {
 export async function generateInitialResponse(
   title: string,
   description: string,
-  similarArticles: any[],
+  similarArticles: Array<{ title: string; content: string }>,
 ): Promise<InitialResponse> {
   try {
+    // In Node.js environment (CLI/tests), use OpenAI directly
+    if (typeof window === 'undefined') {
+      const openai = getOpenAIClient();
+
+      // Prepare context from similar articles
+      const articleContext = similarArticles.length > 0
+        ? `\nRelevant knowledge base articles:\n${similarArticles.map(article => 
+            `Article: ${article.title}\n${article.content}`
+          ).join('\n\n')}`
+        : '';
+
+      // Generate response using RAG
+      const response = await openai.chat.completions.create({
+        model: COMPLETION_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful customer support AI that provides responses based on the knowledge base articles when available.
+            If the knowledge base articles are relevant:
+            1. Use their information to provide accurate, specific answers
+            2. Reference the articles you're using
+            3. Stay factual and avoid speculation
+            
+            If the knowledge base articles aren't relevant or if you need more information:
+            1. Provide a helpful general response
+            2. Ask clarifying questions if needed
+            3. Let them know you'll connect them with support staff for more help
+            
+            Keep responses:
+            - Professional but friendly
+            - Concise but thorough
+            - Focused on solutions
+            - Well-structured with paragraphs or bullet points as needed`
+          },
+          {
+            role: 'user',
+            content: `Ticket Title: ${title}\n\nDescription: ${description}${articleContext}`
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 500
+      });
+
+      const message = response.choices[0].message.content || 'Thank you for submitting your ticket. We will review it shortly.';
+      const requiresMoreInfo = message.toLowerCase().includes('need more information') || 
+                             message.toLowerCase().includes('could you please provide');
+      
+      // Extract suggested questions if the AI asked any
+      const suggestedQuestions = message.match(/\?[^\?]*(?=\n|$)/g)?.map(q => q.trim()) || [];
+
+      return {
+        message,
+        requiresMoreInfo,
+        suggestedQuestions
+      };
+    }
+
+    // In browser environment, use the API route
     const response = await fetch('/api/ai', {
       method: 'POST',
       headers: {
@@ -185,6 +276,17 @@ export async function generateInitialResponse(
 
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
+    // In Node.js environment (CLI/tests), use OpenAI directly
+    if (typeof window === 'undefined') {
+      const openai = getOpenAIClient();
+      const response = await openai.embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: text,
+      });
+      return response.data[0].embedding;
+    }
+
+    // In browser environment, use the API route
     const response = await fetch('/api/ai', {
       method: 'POST',
       headers: {
