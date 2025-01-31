@@ -454,27 +454,23 @@ export default function CustomerView() {
 
       // Update ticket status based on AI resolution
       if (aiResponse.resolution) {
-        console.log('Processing AI resolution:', aiResponse.resolution);
-        
-        if ((aiResponse.resolution.status === 'potential_resolution' || 
-             aiResponse.resolution.status === 'resolved') && 
+        if (aiResponse.resolution.status.toLowerCase() === 'resolved' && 
             aiResponse.resolution.confidence >= 0.8) {
-          console.log('Attempting to update ticket status to Resolved');
-          
           const { data: updateData, error: updateError } = await supabase
             .from('tickets')
-            .update({ status: 'Resolved' })
+            .update({ 
+              status: 'Resolved',
+              updated_at: new Date().toISOString()
+            })
             .eq('id', ticketId)
             .select()
             .single();
 
           if (updateError) {
-            console.error('Error updating ticket status:', updateError);
             toast.error('Failed to update ticket status');
             throw updateError;
           }
 
-          console.log('Ticket updated successfully:', updateData);
           toast.success('Your ticket has been resolved');
           
           // Refresh tickets list
@@ -482,11 +478,13 @@ export default function CustomerView() {
         } else if (aiResponse.resolution.status === 'escalate' && aiResponse.resolution.confidence > 0.8) {
           const { error: updateError } = await supabase
             .from('tickets')
-            .update({ status: 'In Progress' })
+            .update({ 
+              status: 'In Progress',
+              updated_at: new Date().toISOString()
+            })
             .eq('id', ticketId);
 
           if (updateError) {
-            console.error('Error updating ticket status:', updateError);
             toast.error('Failed to update ticket status');
             throw updateError;
           }
@@ -497,7 +495,6 @@ export default function CustomerView() {
       setMessages(prevMessages => prevMessages.filter(msg => msg.id !== 'temp-loading'));
 
     } catch (err) {
-      console.error('Error sending message:', err);
       setError('Failed to send message');
       // Remove loading message on error
       setMessages(prevMessages => prevMessages.filter(msg => msg.id !== 'temp-loading'));

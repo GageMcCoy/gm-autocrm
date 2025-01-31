@@ -49,6 +49,10 @@ interface Message {
   created_at: string;
 }
 
+interface TicketWithMessages extends Ticket {
+  messages: Message[];
+}
+
 // Stats component to handle data fetching
 function StatsGrid() {
   const supabase = createClientComponentClient();
@@ -63,18 +67,78 @@ function StatsGrid() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const { data: tickets } = await supabase
+        // Get all tickets with their messages
+        const { data: tickets, error: ticketsError } = await supabase
           .from('tickets')
-          .select('*');
+          .select(`
+            *,
+            messages (
+              created_at,
+              sender_id
+            )
+          `)
+          .order('created_at', { ascending: true });
 
-        const openTickets = tickets?.filter(t => t.status === 'Open').length || 0;
-        const totalTickets = tickets?.length || 0;
+        if (ticketsError) throw ticketsError;
+
+        if (!tickets) return;
+
+        // Cast tickets to proper type
+        const ticketsWithMessages = tickets as TicketWithMessages[];
+
+        // Calculate stats
+        const totalTickets = ticketsWithMessages.length;
+        const openTickets = ticketsWithMessages.filter(t => t.status === 'Open').length;
+        const resolvedTickets = ticketsWithMessages.filter(t => t.status === 'Resolved').length;
+
+        // Calculate average response time
+        let totalResponseTime = 0;
+        let ticketsWithResponse = 0;
+
+        ticketsWithMessages.forEach(ticket => {
+          if (!ticket.messages) return;
+          
+          // Sort messages by creation time
+          const sortedMessages = ticket.messages.sort((a: Message, b: Message) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+
+          // Find first customer message and first response
+          const firstCustomerMsg = sortedMessages[0];
+          const firstResponse = sortedMessages.find((msg: Message) => 
+            msg.sender_id === '00000000-0000-0000-0000-000000000000' && // AI Assistant ID
+            new Date(msg.created_at) > new Date(firstCustomerMsg.created_at)
+          );
+
+          if (firstCustomerMsg && firstResponse) {
+            const responseTime = new Date(firstResponse.created_at).getTime() - 
+                               new Date(firstCustomerMsg.created_at).getTime();
+            totalResponseTime += responseTime;
+            ticketsWithResponse++;
+          }
+        });
+
+        // Calculate averages and rates
+        const avgResponseMs = ticketsWithResponse > 0 ? 
+          totalResponseTime / ticketsWithResponse : 0;
+        
+        // Convert to hours and minutes
+        const avgResponseHours = Math.floor(avgResponseMs / (1000 * 60 * 60));
+        const avgResponseMinutes = Math.floor((avgResponseMs % (1000 * 60 * 60)) / (1000 * 60));
+        
+        const avgResponseFormatted = avgResponseHours > 0 
+          ? `${avgResponseHours}h ${avgResponseMinutes}m`
+          : `${avgResponseMinutes}m`;
+
+        const resolutionRate = totalTickets > 0 
+          ? ((resolvedTickets / totalTickets) * 100).toFixed(1) + '%'
+          : '0%';
 
         setStats({
           totalTickets,
           openTickets,
-          avgResponse: '1.8h', // Placeholder - implement actual calculation
-          resolutionRate: '9.5%' // Placeholder - implement actual calculation
+          avgResponse: avgResponseFormatted,
+          resolutionRate
         });
       } catch (err) {
         console.error('Error fetching stats:', err);
