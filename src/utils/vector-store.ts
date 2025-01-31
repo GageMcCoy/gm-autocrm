@@ -48,6 +48,19 @@ export async function syncKnowledgeBase(articles: KnowledgeArticle[]): Promise<{
     const errors: string[] = [];
     let processedCount = 0;
 
+    // Get all existing vector IDs from Pinecone
+    const stats = await index.describeIndexStats();
+    const totalVectors = stats.totalRecordCount || 0;
+    
+    // Get all current article IDs
+    const currentArticleIds = articles.map(article => article.id);
+    
+    // If there are vectors in the index, delete any that aren't in the current articles
+    if (totalVectors > 0) {
+      await index.deleteAll();
+      console.log('Cleared existing vectors for clean sync');
+    }
+
     // Process articles in batches to avoid rate limits
     const batchSize = 5;
 
@@ -92,7 +105,7 @@ export async function syncKnowledgeBase(articles: KnowledgeArticle[]): Promise<{
 
     return {
       success: true,
-      message: `Successfully synced ${processedCount} articles to vector store`,
+      message: `Successfully synced ${processedCount} articles to vector store${totalVectors > 0 ? ' (after clearing existing vectors)' : ''}`,
       totalProcessed: processedCount,
       errors: errors.length > 0 ? errors : undefined,
     };
