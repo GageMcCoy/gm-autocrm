@@ -331,7 +331,7 @@ export default function CustomerView() {
     }
   }
 
-  // Modify handleSendMessage to remove knowledge base lookup
+  // Modify handleSendMessage to include knowledge base lookup
   const handleSendMessage = async (e: React.FormEvent, ticketId: string) => {
     e.preventDefault();
     if (!supabase || !newMessage.trim() || !user) return;
@@ -397,6 +397,24 @@ export default function CustomerView() {
 
       if (!ticketData) throw new Error('Ticket not found');
 
+      // Find similar knowledge base articles
+      const similarArticlesResult = await fetch('/api/knowledge-base/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: userMessageContent,
+          limit: 3
+        }),
+      });
+
+      let similarArticles = [];
+      if (similarArticlesResult.ok) {
+        const { articles } = await similarArticlesResult.json();
+        similarArticles = articles || [];
+      }
+
       // Generate and send AI response
       const response = await fetch('/api/ai', {
         method: 'POST',
@@ -410,7 +428,7 @@ export default function CustomerView() {
           userMessage: userMessageContent,
           conversationHistory: formattedHistory,
           ticketStatus: ticketData.status,
-          similarArticles: [] // Empty array since we don't need KB articles for follow-ups
+          similarArticles: similarArticles
         }),
       });
 
