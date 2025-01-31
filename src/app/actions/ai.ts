@@ -20,7 +20,8 @@ export async function generateAIResponse(title: string, description: string, con
   try {
     const model = await getModel();
     
-    const responseChain = RunnableSequence.from([
+    const responseChain = RunnableSequence.from([   
+        
       PromptTemplate.fromTemplate(`
         You are a helpful customer support AI assistant. Your task is to help users with their questions using the information provided in the knowledge base articles.
         You should also evaluate if the issue can be resolved immediately or needs further assistance.
@@ -68,12 +69,48 @@ export async function generateAIResponse(title: string, description: string, con
       context
     });
 
-    // Parse the JSON response
-    const parsedResponse = JSON.parse(result);
-    return {
-      message: parsedResponse.message,
-      resolution: parsedResponse.resolution
-    };
+    try {
+      // First try to parse the entire response as JSON in case it's wrapped in an output field
+      let parsedResult;
+      try {
+        const outerJson = JSON.parse(result);
+        // If we have an output field, use that
+        if (outerJson.output) {
+          parsedResult = outerJson.output;
+        } else {
+          parsedResult = result;
+        }
+      } catch {
+        parsedResult = result;
+      }
+
+      // Clean and normalize the response
+      const cleanedResult = parsedResult
+        .replace(/```json\s*/g, '')  // Remove ```json
+        .replace(/```\s*/g, '')      // Remove ```
+        .replace(/^\s*{\s*|\s*}\s*$/g, '')  // Remove outer curly braces with whitespace
+        .trim();                     // Remove any extra whitespace
+
+      // Reconstruct a valid JSON string
+      const jsonStr = `{${cleanedResult}}`;
+      const parsedResponse = JSON.parse(jsonStr);
+
+      return {
+        message: String(parsedResponse.message || '').trim(),
+        resolution: parsedResponse.resolution
+      };
+    } catch (parseError) {
+      console.error('Error parsing AI response:', parseError);
+      console.log('Raw response:', result);
+      return { 
+        message: 'I apologize, but I encountered an error. A support agent will review your ticket shortly.',
+        resolution: {
+          status: 'escalate',
+          confidence: 1.0,
+          reason: 'Error in AI processing'
+        }
+      };
+    }
   } catch (error) {
     console.error('AI Response Error:', error);
     return { 
@@ -119,12 +156,59 @@ export async function analyzePriority(title: string, description: string) {
       description,
     });
 
-    return JSON.parse(result);
+    try {
+      // First try to parse the entire response as JSON in case it's wrapped in an output field
+      let parsedResult;
+      try {
+        const outerJson = JSON.parse(result);
+        // If we have an output field, use that
+        if (outerJson.output) {
+          parsedResult = outerJson.output;
+        } else {
+          parsedResult = result;
+        }
+      } catch {
+        parsedResult = result;
+      }
+
+      // Clean and normalize the response
+      const cleanedResult = parsedResult
+        .replace(/```json\s*/g, '')  // Remove ```json
+        .replace(/```\s*/g, '')      // Remove ```
+        .replace(/^\s*{\s*|\s*}\s*$/g, '')  // Remove outer curly braces with whitespace
+        .trim();                     // Remove any extra whitespace
+
+      // Reconstruct a valid JSON string
+      const jsonStr = `{${cleanedResult}}`;
+      const parsedResponse = JSON.parse(jsonStr);
+      
+      // Validate and normalize the priority value
+      const priority = String(parsedResponse.priority || '').trim();
+      const normalizedPriority = priority.charAt(0).toUpperCase() + priority.slice(1).toLowerCase();
+      
+      if (!['High', 'Medium', 'Low'].includes(normalizedPriority)) {
+        throw new Error(`Invalid priority value: ${priority}`);
+      }
+
+      return {
+        priority: normalizedPriority,
+        reason: String(parsedResponse.reason || '').trim() || 'No reason provided'
+      };
+    } catch (parseError) {
+      console.error('Error parsing priority response:', parseError);
+      console.log('Raw response:', result);
+      
+      // Fallback to a default response if parsing fails
+      return { 
+        priority: 'Medium',
+        reason: 'Default priority set due to response parsing error'
+      };
+    }
   } catch (error) {
     console.error('Priority Analysis Error:', error);
     return { 
       priority: 'Medium',
-      reason: 'Default priority due to analysis error'
+      reason: 'Default priority set due to analysis error'
     };
   }
 }
@@ -154,62 +238,36 @@ export async function generateFollowUpResponse(
     const model = await getModel();
     
     const responseChain = RunnableSequence.from([
-      PromptTemplate.fromTemplate(`
-        You are a helpful customer support AI assistant. Your task is to continue the conversation about a support ticket.
-        You should evaluate if the issue appears to be resolved or needs escalation.
-
-        Ticket Information:
-        Title: {title}
-        Status: {ticketStatus}
-        ID: {ticketId}
-
-        Knowledge Base Context:
-        {context}
-
-        Previous Conversation:
-        {conversationHistory}
-
-        Latest User Message:
-        {userMessage}
-
-        Resolution Detection Rules:
-        1. If the user's message contains ANY of these indicators, mark as resolved with confidence 1.0:
-           - "yes that resolved my issue"
-           - "that worked"
-           - "it's fixed"
-           - "that solved it"
-           - "problem solved"
-           - "issue resolved"
-           - Any clear affirmative response to a resolution question
-        2. If unsure about resolution, keep confidence below 0.8
-        3. If the user expresses any doubt or new issues, set status to 'continue'
-
-        Instructions:
-        1. Maintain context from the previous conversation
-        2. Use knowledge base articles when relevant
-        3. If resolution is detected:
-           - Set status to 'potential_resolution'
-           - Set confidence to 1.0
-           - Thank them and ask if there's anything else they need help with
-        4. If you need more information:
-           - Ask specific questions
-           - Keep the conversation focused
-        5. If escalation is needed:
-           - Explain why
-           - Recommend human support
-        6. Keep responses professional but friendly
-        7. Be concise but thorough
-
-        Respond in this exact JSON format (do not include backticks or any other formatting):
-        {{
-          "message": "Your response to the user",
-          "resolution": {{
-            "status": "continue | potential_resolution | escalate",
-            "confidence": 0.0 to 1.0,
-            "reason": "Brief explanation of your assessment"
-          }}
-        }}
-      `),
+      PromptTemplate.fromTemplate(
+        'You are a helpful customer support AI assistant. Your task is to continue the conversation about a support ticket.\n' +
+        'You should evaluate if the issue appears to be resolved or needs escalation.\n\n' +
+        'Ticket Information:\n' +
+        'Title: {title}\n' +
+        'Status: {ticketStatus}\n' +
+        'ID: {ticketId}\n\n' +
+        'Knowledge Base Context:\n' +
+        '{context}\n\n' +
+        'Previous Conversation:\n' +
+        '{conversationHistory}\n\n' +
+        'Latest User Message:\n' +
+        '{userMessage}\n\n' +
+        'Resolution Detection Rules:\n' +
+        '1. If the user confirms resolution, mark as resolved with confidence 1.0\n' +
+        '2. If unsure about resolution, keep confidence below 0.8\n' +
+        '3. If the user expresses any doubt or new issues, set status to continue\n\n' +
+        'Instructions:\n' +
+        '1. Maintain context from the previous conversation\n' +
+        '2. Use knowledge base articles when relevant\n' +
+        '3. If resolution is detected, thank them and ask if they need anything else\n' +
+        '4. If you need more information, ask specific questions\n' +
+        '5. If escalation is needed, explain why\n' +
+        '6. Keep responses professional but friendly\n' +
+        '7. Be concise but thorough\n\n' +
+        'Return your response as a JSON object with these fields:\n' +
+        '1. message: Your response to the user\n' +
+        '2. resolution: An object containing status, confidence, and reason\n\n' +
+        'Format your entire response as a valid JSON object only.'
+      ),
       model,
       new StringOutputParser(),
     ]);
@@ -227,12 +285,48 @@ export async function generateFollowUpResponse(
       context
     });
 
-    // Parse the JSON response
-    const parsedResponse = JSON.parse(result);
-    return {
-      message: parsedResponse.message,
-      resolution: parsedResponse.resolution
-    };
+    try {
+      // First try to parse the entire response as JSON in case it's wrapped in an output field
+      let parsedResult;
+      try {
+        const outerJson = JSON.parse(result);
+        // If we have an output field, use that
+        if (outerJson.output) {
+          parsedResult = outerJson.output;
+        } else {
+          parsedResult = result;
+        }
+      } catch {
+        parsedResult = result;
+      }
+
+      // Clean and normalize the response
+      const cleanedResult = parsedResult
+        .replace(/```json\s*/g, '')  // Remove ```json
+        .replace(/```\s*/g, '')      // Remove ```
+        .replace(/^\s*{\s*|\s*}\s*$/g, '')  // Remove outer curly braces with whitespace
+        .trim();                     // Remove any extra whitespace
+
+      // Reconstruct a valid JSON string
+      const jsonStr = `{${cleanedResult}}`;
+      const parsedResponse = JSON.parse(jsonStr);
+
+      return {
+        message: String(parsedResponse.message || '').trim(),
+        resolution: parsedResponse.resolution
+      };
+    } catch (parseError) {
+      console.error('Error parsing follow-up response:', parseError);
+      console.log('Raw response:', result);
+      return { 
+        message: 'I apologize, but I encountered an error. A support agent will review your message shortly.',
+        resolution: {
+          status: 'escalate',
+          confidence: 1.0,
+          reason: 'Error in AI processing'
+        }
+      };
+    }
   } catch (error) {
     console.error('AI Response Error:', error);
     return { 

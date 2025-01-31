@@ -5,10 +5,10 @@ import type { Ticket } from '@/utils/supabase';
 import { useSupabase } from '@/providers/SupabaseProvider';
 import { toast } from 'sonner';
 import { analyzePriority } from '@/utils/openai';
-import { createTicket } from '@/services/tickets';
+import { createTicketAction } from '@/app/actions/tickets';
 import { RealtimePostgresChangesPayload, RealtimeChannel } from '@supabase/supabase-js';
 import { AI_ASSISTANT_ID } from '@/services/messages';
-import { findSimilarArticles } from '@/services/knowledge-base';
+import { findSimilarArticlesAction } from '@/app/actions/knowledge-base';
 
 // Add Message interface
 interface Message {
@@ -18,11 +18,6 @@ interface Message {
   sender_name: string;
   content: string;
   created_at: string;
-  resolution?: {
-    status: 'continue' | 'potential_resolution' | 'escalate';
-    confidence: number;
-    reason: string;
-  };
 }
 
 // Add Message type for payload
@@ -62,9 +57,45 @@ export default function CustomerView() {
   const [newMessage, setNewMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'resolved'>('active');
   const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Add subscription cleanup ref
   const messageSubscription = useRef<any>(null);
+
+  // Fetch tickets when component mounts or user changes
+  useEffect(() => {
+    if (user) {
+      fetchTickets();
+    }
+  }, [user, supabase, activeTab]);
+
+  const fetchTickets = async () => {
+    if (!supabase || !user) return;
+
+    try {
+      setError(null);
+      
+      let query = supabase
+        .from('tickets')
+        .select('*')
+        .eq('submitted_by', user.id)
+        .order('created_at', { ascending: false });
+
+      if (activeTab === 'active') {
+        query = query.in('status', ['Open', 'In Progress', 'Re-Opened']);
+      } else {
+        query = query.eq('status', 'Resolved');
+      }
+
+      const { data, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+      setUserTickets(data || []);
+    } catch (err) {
+      console.error('Error fetching tickets:', err);
+      setError('Failed to load tickets. Please try again later.');
+    }
+  };
 
   // Define loadMessages inside the component
   const loadMessages = useCallback(async (ticketId: string) => {
@@ -130,30 +161,6 @@ export default function CustomerView() {
   }, [supabase]);
 
   useEffect(() => {
-    async function loadUserTickets() {
-      if (!supabase || !user) return;
-
-      try {
-        const { data, error: fetchError } = await supabase
-          .from('tickets')
-          .select('*')
-          .eq('submitted_by', user.id)
-          .order('created_at', { ascending: false });
-
-        if (fetchError) throw fetchError;
-        setUserTickets(data || []);
-      } catch (err) {
-        console.error('Error loading tickets:', err);
-        setError('Failed to load tickets');
-      }
-    }
-
-    if (supabase && user) {
-      loadUserTickets();
-    }
-  }, [supabase, user]);
-
-  useEffect(() => {
     if (!supabase || !selectedTicketId) {
       if (messageSubscription.current) {
         console.log('Cleaning up old subscription');
@@ -172,9 +179,6 @@ export default function CustomerView() {
     // Create a stable channel name
     const channelName = 'messages';
     console.log('Setting up subscription for channel:', channelName);
-
-    // Load initial messages
-    loadMessages(selectedTicketId);
 
     const channel = supabase.channel(channelName);
     
@@ -211,18 +215,6 @@ export default function CustomerView() {
               content: payload.new.content,
               created_at: payload.new.created_at
             };
-
-            // Add resolution status for AI messages if available in memory
-            if (newMessage.sender_id === AI_ASSISTANT_ID) {
-              // Find the corresponding AI response in memory
-              const aiResponse = prevMessages.find(msg => 
-                msg.sender_id === AI_ASSISTANT_ID && 
-                msg.content === newMessage.content
-              );
-              if (aiResponse?.resolution) {
-                newMessage.resolution = aiResponse.resolution;
-              }
-            }
             
             const newMessages = [...withoutLoading, newMessage];
             
@@ -235,6 +227,11 @@ export default function CustomerView() {
       )
       .subscribe(status => {
         console.log(`Subscription status for ${channelName}:`, status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to messages channel');
+          // Only load messages after we're successfully subscribed
+          loadMessages(selectedTicketId);
+        }
       });
 
     messageSubscription.current = channel;
@@ -250,55 +247,55 @@ export default function CustomerView() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !supabase) {
-      toast.error('Please sign in to submit a ticket');
+    
+    if (!user) {
+      toast.error('You must be logged in to submit a ticket');
       return;
     }
 
-    // Store form values before clearing
-    const submittedTitle = title;
-    const submittedDescription = description;
-
-    // Immediately clear form and show loading state
-    setIsSubmitting(true);
-    setError(null);
-    setTitle('');
-    setDescription('');
-
-    // Show immediate feedback toast
-    const loadingToast = toast.loading('Creating your ticket...', {
-      duration: Infinity // We'll dismiss this manually
-    });
+    if (!title || !description) {
+      toast.error('Please fill in all fields');
+      return;
+    }
 
     try {
-      // Create actual ticket first with only the fields we have in our schema
-      const ticket = await createTicket(supabase, {
-        title: submittedTitle,
-        description: submittedDescription,
+      setIsSubmitting(true);
+
+      const result = await createTicketAction({
+        title,
+        description,
         submittedBy: user.id
       });
 
-      // Add ticket to the list and select it
-      setUserTickets(prev => [ticket, ...prev]);
-      setSelectedTicketId(ticket.id);
-
-      // Show success message
-      toast.success('Ticket created successfully!', {
-        id: loadingToast
-      });
-
-      // Load messages for the new ticket
-      await loadMessages(ticket.id);
-    } catch (err) {
-      console.error('Error creating ticket:', err);
-      toast.error('Failed to create ticket', {
-        id: loadingToast
-      });
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unexpected error occurred');
+      if (!result.success) {
+        throw new Error(result.error);
       }
+
+      // Reset form
+      setTitle('');
+      setDescription('');
+      
+      // Show success message
+      toast.success('Ticket submitted successfully');
+
+      // Refresh tickets list and select the new ticket
+      await fetchTickets();
+      
+      // Select the new ticket and load its messages
+      setSelectedTicketId(result.ticket.id);
+      await loadMessages(result.ticket.id);
+
+      // Scroll the messages section into view after a short delay
+      setTimeout(() => {
+        const messagesSection = document.getElementById(`messages-${result.ticket.id}`);
+        if (messagesSection) {
+          messagesSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+
+    } catch (error) {
+      console.error('Error submitting ticket:', error);
+      toast.error('Failed to submit ticket. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -334,7 +331,7 @@ export default function CustomerView() {
     }
   }
 
-  // Modify handleSendMessage to include knowledge base context
+  // Modify handleSendMessage to remove knowledge base lookup
   const handleSendMessage = async (e: React.FormEvent, ticketId: string) => {
     e.preventDefault();
     if (!supabase || !newMessage.trim() || !user) return;
@@ -400,16 +397,6 @@ export default function CustomerView() {
 
       if (!ticketData) throw new Error('Ticket not found');
 
-      // Find similar articles from knowledge base
-      const similarArticles = await findSimilarArticles(userMessageContent);
-      console.log('Found similar articles:', similarArticles.length);
-
-      // Transform articles to only include relevant fields
-      const relevantArticles = similarArticles.map(suggestion => ({
-        title: suggestion.article.title,
-        content: suggestion.article.content
-      }));
-
       // Generate and send AI response
       const response = await fetch('/api/ai', {
         method: 'POST',
@@ -423,7 +410,7 @@ export default function CustomerView() {
           userMessage: userMessageContent,
           conversationHistory: formattedHistory,
           ticketStatus: ticketData.status,
-          similarArticles: relevantArticles
+          similarArticles: [] // Empty array since we don't need KB articles for follow-ups
         }),
       });
 
@@ -451,7 +438,9 @@ export default function CustomerView() {
       if (aiResponse.resolution) {
         console.log('Processing AI resolution:', aiResponse.resolution);
         
-        if (aiResponse.resolution.status === 'potential_resolution' && aiResponse.resolution.confidence > 0.8) {
+        if ((aiResponse.resolution.status === 'potential_resolution' || 
+             aiResponse.resolution.status === 'resolved') && 
+            aiResponse.resolution.confidence >= 0.8) {
           console.log('Attempting to update ticket status to Resolved');
           
           const { data: updateData, error: updateError } = await supabase
@@ -471,18 +460,7 @@ export default function CustomerView() {
           toast.success('Your ticket has been resolved');
           
           // Refresh tickets list
-          const { data: refreshData, error: refreshError } = await supabase
-            .from('tickets')
-            .select('*')
-            .eq('submitted_by', user.id)
-            .order('created_at', { ascending: false });
-
-          if (refreshError) {
-            console.error('Error refreshing tickets:', refreshError);
-            throw refreshError;
-          }
-            
-          setUserTickets(refreshData || []);
+          await fetchTickets();
         } else if (aiResponse.resolution.status === 'escalate' && aiResponse.resolution.confidence > 0.8) {
           const { error: updateError } = await supabase
             .from('tickets')
@@ -496,16 +474,6 @@ export default function CustomerView() {
           }
         }
       }
-
-      // Store resolution in memory for the new message
-      setMessages(prevMessages => {
-        const withoutLoading = prevMessages.filter(msg => msg.id !== 'temp-loading');
-        const lastMessage = withoutLoading[withoutLoading.length - 1];
-        if (lastMessage && lastMessage.sender_id === AI_ASSISTANT_ID) {
-          lastMessage.resolution = aiResponse.resolution;
-        }
-        return withoutLoading;
-      });
 
       // Remove the loading message - the subscription will handle adding the new AI message
       setMessages(prevMessages => prevMessages.filter(msg => msg.id !== 'temp-loading'));
@@ -746,16 +714,16 @@ export default function CustomerView() {
                                             {new Date(message.created_at).toLocaleString()}
                                           </span>
                                         </div>
-                                        <p className="text-white whitespace-pre-wrap break-words">
+                                        <div className="text-white whitespace-pre-wrap break-words">
                                           {message.id === 'temp-loading' ? (
                                             <div className="flex items-center gap-2">
                                               <span className="loading loading-dots loading-sm"></span>
                                               <span>AI is typing...</span>
                                             </div>
                                           ) : (
-                                            message.content
+                                            <span>{message.content}</span>
                                           )}
-                                        </p>
+                                        </div>
                                       </div>
                                     </div>
                                   ))}
