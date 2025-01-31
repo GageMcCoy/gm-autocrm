@@ -251,21 +251,31 @@ export async function generateFollowUpResponse(
         '{conversationHistory}\n\n' +
         'Latest User Message:\n' +
         '{userMessage}\n\n' +
-        'Resolution Detection Rules:\n' +
-        '1. If the user confirms resolution, mark as resolved with confidence 1.0\n' +
-        '2. If unsure about resolution, keep confidence below 0.8\n' +
-        '3. If the user expresses any doubt or new issues, set status to continue\n\n' +
+        'Status and Priority Rules:\n' +
+        '1. Status Options:\n' +
+        '   - "Resolved": When user confirms issue is solved (confidence 1.0)\n' +
+        '   - "Escalated": For refunds, complex issues, or policy exceptions (confidence 1.0)\n' +
+        '   - "In Progress": For ongoing issues needing attention\n' +
+        '   - "Open": Default for unresolved issues\n' +
+        '2. Priority Levels (use exactly as shown):\n' +
+        '   - High: For urgent issues, payment problems, or service outages\n' +
+        '   - Medium: For important but non-critical issues\n' +
+        '   - Low: For general inquiries and minor issues\n\n' +
         'Instructions:\n' +
         '1. Maintain context from the previous conversation\n' +
         '2. Use knowledge base articles when relevant\n' +
         '3. If resolution is detected, thank them and ask if they need anything else\n' +
-        '4. If you need more information, ask specific questions\n' +
-        '5. If escalation is needed, explain why\n' +
+        '4. If escalation is needed, explain why you need to involve a human agent\n' +
+        '5. If you need more information, ask specific questions\n' +
         '6. Keep responses professional but friendly\n' +
         '7. Be concise but thorough\n\n' +
         'Return your response as a JSON object with these fields:\n' +
         '1. message: Your response to the user\n' +
-        '2. resolution: An object containing status, confidence, and reason\n\n' +
+        '2. resolution: An object containing:\n' +
+        '   - status: "Resolved", "Escalated", "In Progress", or "Open"\n' +
+        '   - priority: High, Medium, or Low (without quotes)\n' +
+        '   - confidence: 0.0 to 1.0\n' +
+        '   - reason: Brief explanation of status and priority\n\n' +
         'Format your entire response as a valid JSON object only.'
       ),
       model,

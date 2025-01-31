@@ -433,10 +433,17 @@ export default function CustomerView() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate AI response');
+        const errorData = await response.text();
+        console.error('AI Response Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        throw new Error(`Failed to generate AI response: ${errorData}`);
       }
 
       const aiResponse = await response.json();
+      console.log('AI Response:', JSON.stringify(aiResponse, null, 2));
 
       // Remove loading message and add AI response
       const aiResponseTime = new Date(Date.now() + 2000).toISOString();
@@ -454,14 +461,17 @@ export default function CustomerView() {
 
       // Update ticket status based on AI resolution
       if (aiResponse.resolution) {
+        const updatePayload = {
+          status: aiResponse.resolution.status,
+          priority: aiResponse.resolution.priority,
+          updated_at: new Date().toISOString()
+        };
+
         if (aiResponse.resolution.status.toLowerCase() === 'resolved' && 
             aiResponse.resolution.confidence >= 0.8) {
           const { data: updateData, error: updateError } = await supabase
             .from('tickets')
-            .update({ 
-              status: 'Resolved',
-              updated_at: new Date().toISOString()
-            })
+            .update(updatePayload)
             .eq('id', ticketId)
             .select()
             .single();
@@ -475,17 +485,54 @@ export default function CustomerView() {
           
           // Refresh tickets list
           await fetchTickets();
-        } else if (aiResponse.resolution.status === 'escalate' && aiResponse.resolution.confidence > 0.8) {
+        } else if (aiResponse.resolution.status.toLowerCase() === 'escalated' && 
+                  aiResponse.resolution.confidence >= 0.8) {
+          const { data: updateData, error: updateError } = await supabase
+            .from('tickets')
+            .update({ 
+              priority: 'High',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', ticketId)
+            .select()
+            .single();
+
+          if (updateError) {
+            toast.error('Failed to update ticket priority');
+            throw updateError;
+          }
+
+          toast.success('Your ticket has been escalated to our support team');
+          
+          // Refresh tickets list
+          await fetchTickets();
+        } else if (aiResponse.resolution.status.toLowerCase() === 'in progress') {
+          const { data: updateData, error: updateError } = await supabase
+            .from('tickets')
+            .update(updatePayload)
+            .eq('id', ticketId)
+            .select()
+            .single();
+
+          if (updateError) {
+            toast.error('Failed to update ticket status');
+            throw updateError;
+          }
+          
+          // Refresh tickets list
+          await fetchTickets();
+        } else if (aiResponse.resolution.priority) {
+          // Update priority even if status isn't changing
           const { error: updateError } = await supabase
             .from('tickets')
             .update({ 
-              status: 'In Progress',
+              priority: aiResponse.resolution.priority,
               updated_at: new Date().toISOString()
             })
             .eq('id', ticketId);
 
           if (updateError) {
-            toast.error('Failed to update ticket status');
+            toast.error('Failed to update ticket priority');
             throw updateError;
           }
         }
